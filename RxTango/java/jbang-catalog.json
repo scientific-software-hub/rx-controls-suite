@@ -60,6 +60,10 @@
       "script-ref": "examples/TangoTestRetry.java",
       "description": "Three retry patterns: immediate retry(n), exponential backoff retryWhen, and resilient polling loop"
     },
+    "zip-window": {
+      "script-ref": "examples/TangoTestZipWindow.java",
+      "description": "Synchronizing multiple sources: shielded zip, combineLatest, and buffer(windowMs)+zip"
+    },
     "verify-spec": {
       "script-ref": "examples/VerifySpec.java",
       "description": "Run the reactive-streams TCK against RxTangoAttribute"

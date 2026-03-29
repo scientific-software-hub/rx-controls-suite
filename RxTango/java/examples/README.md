@@ -571,6 +571,208 @@ bounded
 
 ---
 
+## 13. Retry — resilient reads that heal themselves
+
+**A transient device error should not kill your pipeline. Three retry patterns, in order of sophistication.**
+
+In a real control system, reads fail transiently: a device restarts, a network
+blip drops the connection, hardware is momentarily busy. Rx retry operators turn
+fragile one-shot reads into self-healing operations — no manual loop, no
+try/catch, no thread management.
+
+### Pattern 1 — `retry(n)`: immediate retries
+
+Simplest form. Re-subscribes up to N times the moment an error arrives.
+Use when errors are rare and the device recovers immediately.
+
+```shell
+jbang TangoTestRetry.java tango://localhost:10000/sys/tg_test/1
+```
+
+Key code:
+```java
+readAttr(device, attr)
+    .doOnError(e -> System.out.printf("attempt failed: %s%n", e.getMessage()))
+    .retry(maxRetries)           // re-subscribe immediately up to N times
+    .onErrorReturnItem(Double.NaN)  // if all retries exhausted → safe sentinel
+    .blockingGet();
+```
+
+### Pattern 2 — `retryWhen`: exponential backoff
+
+Waits `base × 2^(attempt−1)` ms before each retry. Use when the device needs
+time to recover — a restart, hardware initialisation, or a transient network
+partition.
+
+Key code:
+```java
+readAttr(device, attr)
+    .retryWhen(errors ->
+        errors
+            .zipWith(Flowable.range(1, maxRetries + 1),
+                     (err, attempt) -> Map.entry(err, attempt))
+            .flatMap(e -> {
+                int attempt = e.getValue();
+                if (attempt > maxRetries)
+                    return Flowable.error(e.getKey());        // give up, propagate
+                long delayMs = (long)(Math.pow(2, attempt - 1) * baseDelayMs);
+                System.out.printf("retry %d/%d in %d ms%n", attempt, maxRetries, delayMs);
+                return Flowable.timer(delayMs, TimeUnit.MILLISECONDS);  // wait, then re-subscribe
+            })
+    )
+    .onErrorReturnItem(Double.NaN)
+    .blockingGet();
+```
+
+`errors.zipWith(range)` pairs each error with its attempt number.
+When `attempt > maxRetries` we return `Flowable.error()` — propagating the
+original exception downstream. Otherwise we return a timer that delays the
+next re-subscription.
+
+### Pattern 3 — retry *inside* `flatMapSingle` (the production pattern)
+
+**The most important pattern.** In a polling loop, retry must go inside
+`flatMapSingle` — not on the outer `interval` stream.
+
+```java
+Flowable.interval(pollMs, TimeUnit.MILLISECONDS)
+    .flatMapSingle(tick ->
+        readAttr(device, attr)
+            .retry(2)                       // ← INSIDE: each tick retries independently
+            .onErrorReturnItem(Double.NaN)  // failed tick → NaN; stream never stops
+    )
+    .blockingSubscribe(
+        v   -> System.out.printf("%5d  %+.6f%n", tick, v),
+        err -> System.err.println("Fatal: " + err.getMessage())
+    );
+```
+
+If `retry` were on the **outer** stream (`interval(...).retry(n)`), a single
+bad tick would restart the counter from tick 0, resetting the polling cadence
+and losing all accumulated state. Inside `flatMapSingle`, each tick is an
+independent unit — a failed tick emits NaN and the next tick fires on schedule.
+
+```shell
+jbang TangoTestRetry.java tango://localhost:10000/sys/tg_test/1 3 500 1000
+```
+
+Arguments: `<device> [max-retries=3] [base-delay-ms=500] [poll-ms=1000]`
+
+---
+
+## 14. Zip robustness and time-window synchronization
+
+**What happens when zip sources run at different rates or one misbehaves — and how to fix both.**
+
+Plain `zip` pairs sources by **position** (1st with 1st, 2nd with 2nd), not by
+time. That is exactly right when you control both reads in the same tick — but
+breaks in two situations:
+
+- **One source is slow or dead**: zip stalls waiting for the missing item; the
+  faster source buffers indefinitely. One bad source head-of-line blocks the
+  whole pipeline.
+- **Sources run at different natural rates**: zip pairs by count, not by time.
+  A fast source accumulates a backlog waiting for the slow one to catch up.
+
+Three strategies handle both problems:
+
+### Pattern A — Shielded zip (per-source timeout + NaN fallback)
+
+Wrap each source with a timeout and a sentinel before they reach `zip()`.
+Zip always makes forward progress; `NaN` tells you which reading is stale.
+Use this for poll-driven reads where you control the tick cadence.
+
+```shell
+jbang TangoTestZipWindow.java tango://localhost:10000/sys/tg_test/1
+```
+
+Key code:
+```java
+// Source B reads a non-existent attribute — timeout fires, NaN is returned.
+// zip still produces a pair on every tick.
+Single.zip(
+    readDouble(device, "double_scalar")
+        .timeout(timeoutMs, TimeUnit.MILLISECONDS)
+        .onErrorReturnItem(Double.NaN),    // healthy source
+
+    readDouble(device, "__nonexistent__")
+        .timeout(timeoutMs, TimeUnit.MILLISECONDS)
+        .onErrorReturnItem(Double.NaN),    // dead source → NaN sentinel
+
+    (a, b) -> String.format("A=%s  B=%s", fmtVal(a), fmtVal(b))
+)
+```
+
+### Pattern B — `combineLatest`
+
+Fires on **every** update from any source, combining with the most recently
+cached value from the others. Use when sources are event-driven and you always
+want the freshest available reading from each.
+
+Running A at 200 ms and B at 500 ms, you will see A-triggered rows are more
+frequent and the cached B value repeats across them until B emits next:
+
+```
+trigger              double_scalar (fast)       long_scalar (slow)
+← A              +234.761200           +42.000000
+← A              +198.442100           +42.000000   ← B's value repeats
+     B →         +198.442100           +43.000000   ← B just updated
+← A              +211.008800           +43.000000
+```
+
+Key code:
+```java
+// combineLatest caches the latest from each source.
+// It emits whenever EITHER source emits — fast source drives more emissions.
+Flowable.combineLatest(
+    Flowable.interval(fastMs, MILLISECONDS).flatMapSingle(t -> readDouble(device, "double_scalar")),
+    Flowable.interval(slowMs, MILLISECONDS).flatMapSingle(t -> readDouble(device, "long_scalar")),
+    (a, b) -> String.format("A=%+.4f  B=%+.4f", a, b)
+)
+```
+
+### Pattern C — `buffer(windowMs)` + `zip`
+
+Collect each source into fixed time buckets, then zip corresponding buckets.
+Two values are considered "the same moment" only if they fell in the same window.
+An empty window yields NaN — meaning the source was silent during that slot.
+
+```
+  #A    #B     double_scalar (latest)    long_scalar (latest)
+   5     5       +234.761200               +42.000000
+   5     5       +198.442100               +43.000000
+   0     5               NaN               +44.000000  ← A was silent this window
+```
+
+Key code:
+```java
+// Buffer both sources into windowMs slots.
+Flowable<List<Double>> windowA = Flowable.interval(pollMs, MILLISECONDS)
+    .flatMapSingle(t -> readDouble(device, "double_scalar"))
+    .buffer(windowMs, TimeUnit.MILLISECONDS);
+
+Flowable<List<Double>> windowB = Flowable.interval(pollMs, MILLISECONDS)
+    .flatMapSingle(t -> readDouble(device, "long_scalar"))
+    .buffer(windowMs, TimeUnit.MILLISECONDS);
+
+// zip pairs windows by position — window[0] from A with window[0] from B.
+// Same windowMs guarantees they represent the same time slot.
+Flowable.zip(windowA, windowB, (as, bs) -> {
+    double latestA = as.isEmpty() ? Double.NaN : as.get(as.size() - 1);
+    double latestB = bs.isEmpty() ? Double.NaN : bs.get(bs.size() - 1);
+    return String.format("#A=%d  A=%s  #B=%d  B=%s",
+            as.size(), fmtVal(latestA), bs.size(), fmtVal(latestB));
+})
+```
+
+```shell
+jbang TangoTestZipWindow.java tango://localhost:10000/sys/tg_test/1 300 500 200 500
+```
+
+Arguments: `<device> [timeout-ms=300] [window-ms=500] [fast-ms=200] [slow-ms=500]`
+
+---
+
 ## Bonus: Spec compliance verification
 
 Verifies all RxJTango publishers against the
@@ -604,4 +806,6 @@ Run any example from the repo root without specifying the file path:
 | `jbang sliding-avg@. <device> [window] [ms]` | Rolling average with `buffer(N,1)` |
 | `jbang running-stats@. <device> [ms]` | Live streaming stats with `scan` |
 | `jbang backpressure@. <device> [poll-ms] [process-ms] [--strategy latest\|drop\|buffer]` | Fast producer vs slow consumer |
+| `jbang retry@. <device> [max-retries] [base-delay-ms] [poll-ms]` | retry(n), exponential backoff, resilient poll loop |
+| `jbang zip-window@. <device> [timeout-ms] [window-ms] [fast-ms] [slow-ms]` | Shielded zip, combineLatest, buffer+zip windows |
 | `jbang verify-spec@.` | Run reactive-streams TCK |
