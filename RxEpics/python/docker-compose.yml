@@ -1,0 +1,9 @@
+services:
+  epics-ioc:
+    image: ghcr.io/epics-containers/epics-base-developer:7.0.10ec1
+    network_mode: host      # CA advertises host IP — no NAT issues
+    stdin_open: true        # keep softIoc alive (it exits when stdin closes)
+    tty: true
+    volumes:
+      - ./test.db:/test.db:ro
+    command: /epics/epics-base/bin/linux-x86_64/softIoc -d /test.db

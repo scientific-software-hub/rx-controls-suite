@@ -1,0 +1,28 @@
+# Test PVs for RxEpics examples
+
+# Static double — read/write
+record(ao, "TEST:DOUBLE") {
+    field(DESC, "Static double PV")
+    field(VAL,  "0")
+    field(PREC, "6")
+}
+
+# Static long — read/write
+record(longout, "TEST:LONG") {
+    field(DESC, "Static long PV")
+    field(VAL,  "0")
+}
+
+# Static string — read/write
+record(stringout, "TEST:STRING") {
+    field(DESC, "Static string PV")
+    field(VAL,  "")
+}
+
+# Random ±500 double, 10 Hz — the primary test signal
+record(calc, "TEST:CALC") {
+    field(DESC, "Random ±500 signal at 10 Hz")
+    field(CALC, "RNDM*1000-500")
+    field(SCAN, ".1 second")
+    field(PREC, "6")
+}
