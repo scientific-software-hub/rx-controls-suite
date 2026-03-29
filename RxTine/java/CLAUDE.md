@@ -8,18 +8,23 @@ Java implementation using jbang + RxJava3 + TINE Java client API.
 No Maven. No build step. Each example is a self-contained jbang script.
 
 ```bash
-jbang examples/ReadProperty.java /HERA/Context/Device SENSOR
-jbang read-property@.            /HERA/Context/Device SENSOR STATUS
-jbang poll@.                     /HERA/Context/Device SENSOR 500
-jbang monitor@.                  /HERA/Context/Device SENSOR 500
-jbang calibrate@.  /HERA/Context/DevA SENSOR /HERA/Context/DevB SETPOINT 2.0 10.0 1000
-jbang pipeline@.   /HERA/Context/Device
+# start the local test server first (see Docker section below)
+docker compose up -d
+
+# then run examples against the test device
+jbang read-property@. /TEST/RXTEST/TESTDEV_0@localhost DOUBLE
+jbang poll@.          /TEST/RXTEST/TESTDEV_0@localhost DOUBLE 500
+jbang monitor@.       /TEST/RXTEST/TESTDEV_0@localhost DOUBLE 500
+jbang calibrate@.     /TEST/RXTEST/TESTDEV_0@localhost DOUBLE \
+                      /TEST/RXTEST/TESTDEV_0@localhost SETPOINT 2.0 0.0 1000
+jbang pipeline@.      /TEST/RXTEST/TESTDEV_0@localhost
 ```
 
 ## Prerequisites
 
 - [jbang](https://www.jbang.dev/) — `sdk install jbang`
 - Java 11+
+- Docker + Docker Compose — for the local test server
 - TINE Java jar installed in `~/.m2` — not on Maven Central.
   Download from https://tine.desy.de and install manually:
   ```bash
@@ -28,11 +33,59 @@ jbang pipeline@.   /HERA/Context/Device
   ```
   Adjust the version to whatever you downloaded.
 
+## Docker — local test server
+
+A minimal TINE server that exports test properties — analogous to `TangoTest`
+and the EPICS soft IOC.
+
+```bash
+# 1. copy the TINE jar into docker/ (not committed to git)
+cp /path/to/tine.jar docker/
+
+# 2. build and start
+docker compose up -d
+
+# 3. verify — should print the DOUBLE sine value
+jbang read-property@. /TEST/RXTEST/TESTDEV_0@localhost DOUBLE
+```
+
+### Test device address
+
+```
+/TEST/RXTEST/TESTDEV_0@localhost
+ │     │       │          └── direct host — bypasses TNS (name service)
+ │     │       └──────────── device name
+ │     └──────────────────── server name (from fecid.csv)
+ └────────────────────────── context     (from fecid.csv)
+```
+
+### Exported properties
+
+| Property   | Type   | Access | Description                        |
+|------------|--------|--------|------------------------------------|
+| `DOUBLE`   | float  | R      | Sine wave ±500, period 10 s        |
+| `LONG`     | int32  | R      | Seconds counter since server start |
+| `STRING`   | string | R      | "POSITIVE" / "NEGATIVE"            |
+| `SETPOINT` | float  | R/W    | Writable; persists as written      |
+
+### Config files
+
+All under `docker/` — override without rebuilding by mounting `docker/config/`:
+
+| File                  | Purpose                              |
+|-----------------------|--------------------------------------|
+| `fecid.csv`           | FEC name + context (`RXTEST, TEST`)  |
+| `exports.csv`         | Property names, sizes, formats       |
+| `RXTEST-devices.csv`  | Device list (`TESTDEV_0`)            |
+| `tine.properties`     | Port, TNS settings, log level        |
+
 ## Project layout
 
 ```
 src/          Library source (no jbang headers — included via //SOURCES)
 examples/     Runnable jbang demo scripts
+docker/       Test server source, config files, Dockerfile
+docker-compose.yml
 ```
 
 ## Architecture

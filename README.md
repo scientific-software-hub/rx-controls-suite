@@ -68,6 +68,22 @@ python examples/pv_pipeline.py
 
 ---
 
+## RxTine/java — quick start
+
+Prerequisites: jbang, Docker, TINE jar in `~/.m2` (see [RxTine/java/CLAUDE.md](RxTine/java/CLAUDE.md)).
+
+```shell
+cd RxTine/java
+cp /path/to/tine.jar docker/
+docker compose up -d          # start TINE test server (RXTEST in context TEST)
+
+jbang read-property@. /TEST/RXTEST/TESTDEV_0@localhost DOUBLE
+jbang poll@.          /TEST/RXTEST/TESTDEV_0@localhost DOUBLE 500
+jbang pipeline@.      /TEST/RXTEST/TESTDEV_0@localhost
+```
+
+---
+
 ## License
 
 [AGPL-3.0](LICENSE) for open / non-commercial use.

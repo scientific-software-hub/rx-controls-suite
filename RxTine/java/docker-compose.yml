@@ -1,0 +1,33 @@
+services:
+
+  # ── TINE test device server ─────────────────────────────────────────────────
+  # Exports DOUBLE (sine), LONG (counter), STRING (status), SETPOINT (rw)
+  # on context TEST / server RXTEST / device TESTDEV_0
+  #
+  # Client address (direct, no TNS): /TEST/RXTEST/TESTDEV_0@rxtest
+  #
+  # Build: docker compose build
+  # Start: docker compose up -d
+  # Stop:  docker compose down
+
+  rxtest:
+    build:
+      context: docker/
+    image: rxtine-testserver:latest
+    container_name: rxtest
+    hostname: rxtest                # used in client @rxtest addressing
+    ports:
+      - "7000:7000"                 # TINE server TCP port
+    environment:
+      N_DEVICES: "1"               # number of TESTDEV_N devices to export
+    volumes:
+      # Override config without rebuilding: place edited files in docker/config/
+      # and uncomment the line below.
+      # - ./docker/config:/tine-config:ro
+      []
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "7000"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
