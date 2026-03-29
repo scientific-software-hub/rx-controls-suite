@@ -17,6 +17,7 @@ Works the same way whether you're talking to **Tango Controls** (Java) or **EPIC
 |---|---|---|---|
 | [RxTango/java](RxTango/java/) | Tango Controls | Java 11+ | jbang + RxJava3 + ezTangoAPI |
 | [RxEpics/python](RxEpics/python/) | EPICS Channel Access | Python 3.10+ | uv + RxPY v4 + caproto |
+| [RxTine/java](RxTine/java/) | TINE (DESY) | Java 11+ | jbang + RxJava3 + TINE Java API |
 
 ---
 

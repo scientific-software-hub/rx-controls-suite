@@ -1,0 +1,24 @@
+{
+  "aliases": {
+    "read-property": {
+      "script-ref": "examples/ReadProperty.java",
+      "description": "Read one or more TINE properties and print their values"
+    },
+    "poll": {
+      "script-ref": "examples/PollProperty.java",
+      "description": "Poll a TINE property on a fixed interval and stream the values"
+    },
+    "monitor": {
+      "script-ref": "examples/MonitorProperty.java",
+      "description": "Subscribe to a TINE CM_POLL monitor and stream values to stdout"
+    },
+    "calibrate": {
+      "script-ref": "examples/CalibrationPipeline.java",
+      "description": "Continuous read-calibrate-write pipeline (gain * value + offset)"
+    },
+    "pipeline": {
+      "script-ref": "examples/TineClientPipeline.java",
+      "description": "Fluent TineClient pipeline: read → calibrate → write → read-back"
+    }
+  }
+}

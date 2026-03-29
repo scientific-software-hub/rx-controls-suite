@@ -14,7 +14,9 @@ rx-controls-suite/
     java/       ← migrated from RxJTango (jbang, RxJava3, ezTangoAPI)
   RxEpics/
     python/     ← migrated from RxEpics (uv/pip, RxPY v4, caproto[asyncio])
-  (RxTango/python, RxEpics/java — future)
+  RxTine/
+    java/       ← new (jbang, RxJava3, TINE Java API)
+  (RxTango/python, RxEpics/java, RxTine/python — future)
 ```
 
 ## Sub-project summaries
@@ -33,6 +35,26 @@ Wraps [ezTangoAPI](https://github.com/hzg-wpi/ez-tango-api) (`TangoProxy`) with 
 - `RxTangoAttributeChangePublisher<T>` — push/multi-value publisher backed by Tango events (`CHANGE`, `PERIODIC`, `ARCHIVE`)
 
 **Key design:** Single-shot publishers; use `Flowable.interval(...).flatMapSingle(...)` for polling. Production code depends only on `org.reactivestreams`; RxJava3 used in examples only.
+
+### RxTine/java
+
+Wraps [TINE](https://tine.desy.de) (Three-fold Integrated Networking Environment,
+DESY) with reactive-streams `Publisher` interfaces via the TINE Java client API.
+
+**Build:** jbang — no Maven. TINE jar must be manually installed in `~/.m2`
+(not on Maven Central).
+
+**Class hierarchy (`src/`, package `org.tine.client.rx`):**
+- `RxTine<T>` — abstract base `Publisher<T>`; single-shot (one item per subscription)
+  - `RxTineRead<T>` — reads a property via `TLink.executeAndClose()`
+  - `RxTineWrite<T>` — writes a property, emits written value
+- `RxTineMonitor<T>` — push/multi-value publisher backed by `TLink.attach(CM_POLL)`
+- `TineClient` — fluent builder mirroring TangoClient (no executeCommand — TINE
+  has no commands)
+
+**Key design:** same single-shot + push separation as RxTango. Address is a
+`devName` + `property` pair (e.g. `/HERA/Context/Device`, `SENSOR`).
+`TDataType` always returns arrays; take index `[0]` for scalars.
 
 ### RxEpics/python (origin: RxEpics)
 
