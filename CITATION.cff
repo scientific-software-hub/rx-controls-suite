@@ -6,6 +6,11 @@ abstract: >
   A monorepo suite of ReactiveX wrappers for scientific control system frameworks.
   Provides the same operator vocabulary — poll, zip, sliding average, backpressure,
   fluent pipelines — across Tango Controls (Java) and EPICS Channel Access (Python).
+authors:
+  - family-names: Khokhriakov
+    given-names: Igor
+    email: mail@ingvord.ru
+    alias: ingvord
 repository-code: "https://github.com/scientific-software-hub/rx-controls-suite"
 license: AGPL-3.0
 keywords:
