@@ -12,12 +12,12 @@ No Maven. No build step. Each example is a self-contained jbang script.
 docker compose up -d
 
 # then run examples against the test device
-jbang read-property@. /TEST/RXTEST/TESTDEV_0@localhost DOUBLE
-jbang poll@.          /TEST/RXTEST/TESTDEV_0@localhost DOUBLE 500
-jbang monitor@.       /TEST/RXTEST/TESTDEV_0@localhost DOUBLE 500
-jbang calibrate@.     /TEST/RXTEST/TESTDEV_0@localhost DOUBLE \
-                      /TEST/RXTEST/TESTDEV_0@localhost SETPOINT 2.0 0.0 1000
-jbang pipeline@.      /TEST/RXTEST/TESTDEV_0@localhost
+jbang read-property@. /TEST/JSINESRV/SINEDEV_0@jsinesrv Sine
+jbang poll@.          /TEST/JSINESRV/SINEDEV_0@jsinesrv Sine 500
+jbang monitor@.       /TEST/JSINESRV/SINEDEV_0@jsinesrv Sine 500
+jbang calibrate@.     /TEST/JSINESRV/SINEDEV_0@jsinesrv Sine \
+                      /TEST/JSINESRV/SINEDEV_0@jsinesrv Amplitude 2.0 0.0 1000
+jbang pipeline@.      /TEST/JSINESRV/SINEDEV_0@jsinesrv
 ```
 
 ## Prerequisites
@@ -35,49 +35,50 @@ jbang pipeline@.      /TEST/RXTEST/TESTDEV_0@localhost
 
 ## Docker — local test server
 
-A minimal TINE server that exports test properties — analogous to `TangoTest`
-and the EPICS soft IOC.
+The official `jsineServer` from the TINE distribution — analogous to `TangoTest`
+and the EPICS soft IOC. Exports a propagating sine wave on 10 devices.
 
 ```bash
-# 1. copy the TINE jar into docker/ (not committed to git)
+# 1. copy the TINE jars into docker/ (not committed to git)
 cp /path/to/tine.jar docker/
+cp /path/to/jsineServer.jar docker/
 
 # 2. build and start
 docker compose up -d
 
-# 3. verify — should print the DOUBLE sine value
-jbang read-property@. /TEST/RXTEST/TESTDEV_0@localhost DOUBLE
+# 3. verify — should print the Sine value
+jbang read-property@. /TEST/JSINESRV/SINEDEV_0@jsinesrv Sine
 ```
 
 ### Test device address
 
 ```
-/TEST/RXTEST/TESTDEV_0@localhost
- │     │       │          └── direct host — bypasses TNS (name service)
- │     │       └──────────── device name
- │     └──────────────────── server name (from fecid.csv)
- └────────────────────────── context     (from fecid.csv)
+/TEST/JSINESRV/SINEDEV_0@jsinesrv
+ │     │          │          └── direct host — bypasses TNS (name service)
+ │     │          └──────────── device name  (from SJNEQM-devices.csv)
+ │     └─────────────────────── server name  (from fecid.csv)
+ └───────────────────────────── context      (from fecid.csv)
 ```
 
 ### Exported properties
 
-| Property   | Type   | Access | Description                        |
-|------------|--------|--------|------------------------------------|
-| `DOUBLE`   | float  | R      | Sine wave ±500, period 10 s        |
-| `LONG`     | int32  | R      | Seconds counter since server start |
-| `STRING`   | string | R      | "POSITIVE" / "NEGATIVE"            |
-| `SETPOINT` | float  | R/W    | Writable; persists as written      |
+| Property    | Type    | Access | Description                              |
+|-------------|---------|--------|------------------------------------------|
+| `Sine`      | float[] | R      | Propagating sine wave value (per device) |
+| `Amplitude` | float   | R/W    | Amplitude of the sine wave               |
+| `Frequency` | float   | R/W    | Frequency of the sine wave               |
+| `Noise`     | float   | R      | Noise level added to the sine wave       |
 
 ### Config files
 
 All under `docker/` — override without rebuilding by mounting `docker/config/`:
 
-| File                  | Purpose                              |
-|-----------------------|--------------------------------------|
-| `fecid.csv`           | FEC name + context (`RXTEST, TEST`)  |
-| `exports.csv`         | Property names, sizes, formats       |
-| `RXTEST-devices.csv`  | Device list (`TESTDEV_0`)            |
-| `tine.properties`     | Port, TNS settings, log level        |
+| File                 | Purpose                                          |
+|----------------------|--------------------------------------------------|
+| `fecid.csv`          | FEC name + context (`JSINESRV, TEST`)            |
+| `exports.csv`        | Property reference (server registers in code)    |
+| `SJNEQM-devices.csv` | Device list (`SINEDEV_0` … `SINEDEV_9`)          |
+| `tine.properties`    | Port, TNS settings, log level                    |
 
 ## Project layout
 

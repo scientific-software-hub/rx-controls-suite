@@ -1,6 +1,9 @@
-# TINE property export definitions
-# Format: PROPERTY_NAME, SIZE, FORMAT, ACCESS
-DOUBLE,   1, CF_FLOAT,  CA_READ
-LONG,     1, CF_INT32,  CA_READ
-STRING,  32, CF_STRING, CA_READ
-SETPOINT, 1, CF_FLOAT,  CA_RDWR
+# TINE exports config for jsineServer (SineDeviceServer).
+# Properties are registered in SineEquipmentModule.registerProperties() — this file
+# is kept for reference and potential server-name resolution by the TINE framework.
+#
+# Key properties exported per device:
+#   Sine        CF_FLOAT   R    sine-wave value (changes each cycle)
+#   Amplitude   CF_FLOAT   R/W  amplitude of the sine wave
+#   Frequency   CF_FLOAT   R/W  frequency of the sine wave
+#   Noise       CF_FLOAT   R    noise level

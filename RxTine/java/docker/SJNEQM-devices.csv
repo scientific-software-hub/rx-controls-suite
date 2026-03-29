@@ -1,0 +1,13 @@
+# Device list for SineEquipmentModule (local name: SJNEQM)
+# One device name per line — index 0..9 (SineDeviceServer creates 10 devices)
+# These names appear in TINE addresses: /TEST/JSINESRV/<DEVICE>@host
+SINEDEV_0
+SINEDEV_1
+SINEDEV_2
+SINEDEV_3
+SINEDEV_4
+SINEDEV_5
+SINEDEV_6
+SINEDEV_7
+SINEDEV_8
+SINEDEV_9

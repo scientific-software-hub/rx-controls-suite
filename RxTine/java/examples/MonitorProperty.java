@@ -19,7 +19,7 @@ import org.tine.client.rx.RxTineMonitor;
  *   jbang MonitorProperty.java <device> <property> [interval-ms]
  *
  * Example:
- *   jbang MonitorProperty.java /HERA/Context/Device SENSOR 500
+ *   jbang MonitorProperty.java /TEST/JSINESRV/SINEDEV_0@jsinesrv Sine 500
  */
 public class MonitorProperty {
     public static void main(String[] args) throws Exception {

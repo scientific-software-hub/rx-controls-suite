@@ -1,3 +1,4 @@
 # TINE FEC identity file
 # Format: FEC_NAME, CONTEXT
-RXTEST, TEST
+# FEC_NAME becomes the server component in TINE addresses: /TEST/JSINESRV/...
+JSINESRV, TEST

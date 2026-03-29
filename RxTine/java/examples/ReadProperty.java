@@ -15,7 +15,7 @@ import org.tine.client.rx.RxTineRead;
  *   jbang ReadProperty.java <device> <property> [<property2> ...]
  *
  * Example:
- *   jbang ReadProperty.java /HERA/Context/Device SENSOR STATUS
+ *   jbang ReadProperty.java /TEST/JSINESRV/SINEDEV_0@jsinesrv Sine Amplitude
  */
 public class ReadProperty {
     public static void main(String[] args) throws Exception {

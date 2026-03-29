@@ -25,9 +25,9 @@ import java.util.concurrent.TimeUnit;
  *
  * Example:
  *   jbang CalibrationPipeline.java \
- *       /HERA/Context/DeviceA SENSOR \
- *       /HERA/Context/DeviceB SETPOINT \
- *       2.0 10.0 1000
+ *       /TEST/JSINESRV/SINEDEV_0@jsinesrv Sine \
+ *       /TEST/JSINESRV/SINEDEV_0@jsinesrv Amplitude \
+ *       2.0 0.0 1000
  */
 public class CalibrationPipeline {
     public static void main(String[] args) throws Exception {

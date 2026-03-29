@@ -1,25 +1,24 @@
 services:
 
-  # ── TINE test device server ─────────────────────────────────────────────────
-  # Exports DOUBLE (sine), LONG (counter), STRING (status), SETPOINT (rw)
-  # on context TEST / server RXTEST / device TESTDEV_0
+  # ── TINE sine-wave test device server ───────────────────────────────────────
+  # Runs the official jsineServer from the TINE distribution.
+  # Exports Sine, Amplitude, Frequency, Noise properties on 10 devices.
   #
-  # Client address (direct, no TNS): /TEST/RXTEST/TESTDEV_0@rxtest
+  # Context: TEST  |  Server: JSINESRV  |  Devices: SINEDEV_0 .. SINEDEV_9
+  # Client address (direct, no TNS): /TEST/JSINESRV/SINEDEV_0@jsinesrv
   #
   # Build: docker compose build
   # Start: docker compose up -d
   # Stop:  docker compose down
 
-  rxtest:
+  jsinesrv:
     build:
       context: docker/
     image: rxtine-testserver:latest
-    container_name: rxtest
-    hostname: rxtest                # used in client @rxtest addressing
+    container_name: jsinesrv
+    hostname: jsinesrv                # used in client @jsinesrv addressing
     ports:
-      - "7000:7000"                 # TINE server TCP port
-    environment:
-      N_DEVICES: "1"               # number of TESTDEV_N devices to export
+      - "7000:7000"                   # TINE server TCP port
     volumes:
       # Override config without rebuilding: place edited files in docker/config/
       # and uncomment the line below.

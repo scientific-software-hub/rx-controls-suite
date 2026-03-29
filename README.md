@@ -70,16 +70,16 @@ python examples/pv_pipeline.py
 
 ## RxTine/java — quick start
 
-Prerequisites: jbang, Docker, TINE jar in `~/.m2` (see [RxTine/java/CLAUDE.md](RxTine/java/CLAUDE.md)).
+Prerequisites: jbang, Docker, TINE jars in `docker/` (see [RxTine/java/CLAUDE.md](RxTine/java/CLAUDE.md)).
 
 ```shell
 cd RxTine/java
-cp /path/to/tine.jar docker/
-docker compose up -d          # start TINE test server (RXTEST in context TEST)
+cp /path/to/tine.jar /path/to/jsineServer.jar docker/
+docker compose up -d          # start jsineServer (JSINESRV in context TEST)
 
-jbang read-property@. /TEST/RXTEST/TESTDEV_0@localhost DOUBLE
-jbang poll@.          /TEST/RXTEST/TESTDEV_0@localhost DOUBLE 500
-jbang pipeline@.      /TEST/RXTEST/TESTDEV_0@localhost
+jbang read-property@. /TEST/JSINESRV/SINEDEV_0@jsinesrv Sine
+jbang poll@.          /TEST/JSINESRV/SINEDEV_0@jsinesrv Sine 500
+jbang pipeline@.      /TEST/JSINESRV/SINEDEV_0@jsinesrv
 ```
 
 ---

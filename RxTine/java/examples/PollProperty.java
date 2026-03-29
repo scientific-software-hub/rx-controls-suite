@@ -18,7 +18,7 @@ import java.util.concurrent.atomic.AtomicLong;
  *   jbang PollProperty.java <device> <property> [interval-ms]
  *
  * Example:
- *   jbang PollProperty.java /HERA/Context/Device SENSOR 500
+ *   jbang PollProperty.java /TEST/JSINESRV/SINEDEV_0@jsinesrv Sine 500
  */
 public class PollProperty {
     public static void main(String[] args) throws Exception {

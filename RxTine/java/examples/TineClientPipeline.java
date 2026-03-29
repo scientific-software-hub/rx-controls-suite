@@ -17,7 +17,7 @@ import org.tine.client.rx.TineClient;
  *   jbang TineClientPipeline.java <device>
  *
  * Example:
- *   jbang TineClientPipeline.java /HERA/Context/Device
+ *   jbang TineClientPipeline.java /TEST/JSINESRV/SINEDEV_0@jsinesrv
  */
 public class TineClientPipeline {
     public static void main(String[] args) throws Exception {
@@ -29,20 +29,20 @@ public class TineClientPipeline {
 
         Object result = new TineClient()
 
-                // 1. read raw sensor value
-                .read(device, "SENSOR")
-                .map(v -> { System.out.printf("  [1] read    SENSOR     =  %s%n", v); return v; })
+                // 1. read current sine value
+                .read(device, "Sine")
+                .map(v -> { System.out.printf("  [1] read    Sine       =  %s%n", v); return v; })
 
-                // 2. apply calibration locally — no I/O
+                // 2. derive new amplitude from sine (abs + scale) — no I/O
                 .map(v -> Math.abs(((Number) v).doubleValue()) * 2.0 + 1.5)
-                .map(v -> { System.out.printf("  [2] calibrated         =  %s%n", v); return v; })
+                .map(v -> { System.out.printf("  [2] new Amplitude      =  %s%n", v); return v; })
 
-                // 3. write calibrated value to SETPOINT
-                .write(device, "SETPOINT")
-                .map(v -> { System.out.printf("  [3] wrote   SETPOINT   =  %s%n", v); return v; })
+                // 3. write new amplitude
+                .write(device, "Amplitude")
+                .map(v -> { System.out.printf("  [3] wrote  Amplitude   =  %s%n", v); return v; })
 
                 // 4. read back to confirm what the device actually has
-                .read(device, "SETPOINT")
+                .read(device, "Amplitude")
 
                 .blockingGet();
 
