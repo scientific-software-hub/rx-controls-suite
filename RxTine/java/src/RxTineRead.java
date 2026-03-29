@@ -61,13 +61,10 @@ public class RxTineRead<T> extends RxTine<T> {
     }
 
     public static RxTineRead<String> ofString(String devName, String property) {
+        String[] buf = new String[1];
         return new RxTineRead<>(devName, property,
-                new TDataType(new String[1]),
-                dout -> {
-                    String[] buf = new String[1];
-                    dout.getStringArray(buf);
-                    return buf[0];
-                });
+                new TDataType(buf),
+                dout -> { dout.getData(buf); return buf[0]; });
     }
 
     public static RxTineRead<double[]> ofDoubleArray(String devName, String property, int size) {

@@ -26,10 +26,17 @@ COPY fecid.csv          /tine-config/
 COPY exports.csv        /tine-config/
 COPY SJNEQM-devices.csv /tine-config/
 COPY tine.properties    /tine-config/
+# Address resolution: maps server names → FEC addresses (needed for alarm subsystem init)
+COPY eqpdbase.csv       /tine-config/
+COPY fecaddr.csv        /tine-config/
+# Pre-populate the dynamic address cache so TINE finds addresses without ENS
+RUN mkdir -p /var/tmp/tine/cache && \
+    cp /tine-config/eqpdbase.csv /var/tmp/tine/cache/eqpdbase.csv && \
+    cp /tine-config/fecaddr.csv  /var/tmp/tine/cache/fecaddr.csv
 
 # TINE server TCP port
 EXPOSE 7000
 
 ENV JAVA_OPTS="-Dtine.home=/tine-config"
 
-ENTRYPOINT ["sh", "-c", "exec java $JAVA_OPTS -cp tine.jar:jsineServer.jar de.desy.tine.example.sine.SineDeviceServer"]
+ENTRYPOINT ["sh", "-c", "exec java $JAVA_OPTS -cp tine.jar:jsineServer.jar de.desy.tine.example.sine.SineDeviceServer </dev/null"]

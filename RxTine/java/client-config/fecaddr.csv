@@ -1,0 +1,4 @@
+# TINE FEC address database — maps FEC names to IP addresses
+# PORT_OFFSET=0 means use the default TINE port (7000)
+FEC_NAME,IP_ADDR,PORT_OFFSET
+JSINESRV,127.0.0.1,0

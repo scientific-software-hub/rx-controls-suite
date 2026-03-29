@@ -1,0 +1,5 @@
+# TINE equipment database — maps server names to FEC addresses
+# Used by the TINE Java client to resolve /CONTEXT/SERVER/DEVICE addresses
+# NAME = exported server name, EQPMODULE = equipment module local name
+NAME,CONTEXT,EQPMODULE,FECNAME
+JSINESRV,TEST,SJNEQM,JSINESRV

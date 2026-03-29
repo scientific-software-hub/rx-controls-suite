@@ -18,7 +18,8 @@ services:
     container_name: jsinesrv
     hostname: jsinesrv                # used in client @jsinesrv addressing
     ports:
-      - "7000:7000"                   # TINE server TCP port
+      - "8503:8503"                   # TINE TCP server port (TCP_PORT + PORT_OFFSET=0)
+      - "9003:9003/udp"               # TINE UDP server port (SRV_PORT + PORT_OFFSET=0)
     volumes:
       # Override config without rebuilding: place edited files in docker/config/
       # and uncomment the line below.
@@ -26,7 +27,7 @@ services:
       []
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "nc", "-z", "localhost", "7000"]
+      test: ["CMD", "nc", "-z", "jsinesrv", "8503"]
       interval: 5s
       timeout: 3s
       retries: 5

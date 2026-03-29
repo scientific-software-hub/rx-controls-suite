@@ -2,23 +2,28 @@
   "aliases": {
     "read-property": {
       "script-ref": "examples/ReadProperty.java",
-      "description": "Read one or more TINE properties and print their values"
+      "description": "Read one or more TINE properties and print their values",
+      "runtime-options": ["-Dtine.home=./client-config"]
     },
     "poll": {
       "script-ref": "examples/PollProperty.java",
-      "description": "Poll a TINE property on a fixed interval and stream the values"
+      "description": "Poll a TINE property on a fixed interval and stream the values",
+      "runtime-options": ["-Dtine.home=./client-config"]
     },
     "monitor": {
       "script-ref": "examples/MonitorProperty.java",
-      "description": "Subscribe to a TINE CM_POLL monitor and stream values to stdout"
+      "description": "Subscribe to a TINE CM_POLL monitor and stream values to stdout",
+      "runtime-options": ["-Dtine.home=./client-config"]
     },
     "calibrate": {
       "script-ref": "examples/CalibrationPipeline.java",
-      "description": "Continuous read-calibrate-write pipeline (gain * value + offset)"
+      "description": "Continuous read-calibrate-write pipeline (gain * value + offset)",
+      "runtime-options": ["-Dtine.home=./client-config"]
     },
     "pipeline": {
       "script-ref": "examples/TineClientPipeline.java",
-      "description": "Fluent TineClient pipeline: read → calibrate → write → read-back"
+      "description": "Fluent TineClient pipeline: read → calibrate → write → read-back",
+      "runtime-options": ["-Dtine.home=./client-config"]
     }
   }
 }

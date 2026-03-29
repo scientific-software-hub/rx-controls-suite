@@ -1,0 +1,7 @@
+# TINE equipment database for jsineServer container
+# STATE/GLOBALS are TINE system servers; mapped to SYSSVR FEC (port 7001)
+# so address resolution succeeds but connections fail fast (connection refused).
+NAME,CONTEXT,EQPMODULE,FECNAME
+JSINESRV,TEST,SJNEQM,JSINESRV
+STATE,TEST,STATEEQM,SYSSVR
+GLOBALS,TEST,GLOBALSEQM,SYSSVR

@@ -2,7 +2,7 @@
 //JAVA 11+
 //DEPS io.reactivex.rxjava3:rxjava:3.1.8
 //DEPS org.reactivestreams:reactive-streams:1.0.4
-//DEPS de.desy.tine:tine:4.4
+//DEPS de.desy.tine:tine:5.3
 //SOURCES ../src/RxTine.java ../src/RxTineRead.java
 
 import io.reactivex.rxjava3.core.Flowable;
