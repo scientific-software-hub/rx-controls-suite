@@ -1,0 +1,64 @@
+{
+  "aliases": {
+    "read-attribute": {
+      "script-ref": "examples/ReadAttribute.java",
+      "description": "Read one or more Tango attributes and print their values"
+    },
+    "poll": {
+      "script-ref": "examples/PollAttribute.java",
+      "description": "Poll a Tango attribute on a fixed interval and stream the values"
+    },
+    "monitor": {
+      "script-ref": "examples/MonitorAttribute.java",
+      "description": "Stream Tango attribute change events to stdout"
+    },
+    "zip": {
+      "script-ref": "examples/ZipAttributes.java",
+      "description": "Poll and zip two attributes from (possibly different) devices"
+    },
+    "snapshot": {
+      "script-ref": "examples/MultiDeviceSnapshot.java",
+      "description": "Read attributes from multiple devices in parallel and print a combined snapshot"
+    },
+    "stats": {
+      "script-ref": "examples/TangoTestStats.java",
+      "description": "Collect N samples of double_scalar and compute min/max/mean/stddev"
+    },
+    "correlate": {
+      "script-ref": "examples/TangoTestCorrelate.java",
+      "description": "Read double_scalar and long_scalar in parallel on each tick, print both with their difference"
+    },
+    "calibrate": {
+      "script-ref": "examples/CalibrationPipeline.java",
+      "description": "Read-transform-write pipeline with linear calibration (gain * value + offset)"
+    },
+    "alarm": {
+      "script-ref": "examples/AlarmMonitor.java",
+      "description": "Fan-in alarm monitor: merge N polling streams, alert when threshold is exceeded"
+    },
+    "pipeline": {
+      "script-ref": "examples/TangoTestPipeline.java",
+      "description": "6-step fluent TangoClient pipeline on TangoTest: read → command → calibrate → command → write → read-back"
+    },
+    "throttle": {
+      "script-ref": "examples/TangoTestThrottle.java",
+      "description": "Poll at high frequency, display at low rate via throttleLast — shows Rx rate control"
+    },
+    "sliding-avg": {
+      "script-ref": "examples/TangoTestSlidingAverage.java",
+      "description": "Rolling average over a sliding window of N samples using buffer(N, 1)"
+    },
+    "running-stats": {
+      "script-ref": "examples/TangoTestRunningStats.java",
+      "description": "Live streaming min/max/mean/stddev using scan() — O(1) memory, Welford algorithm"
+    },
+    "backpressure": {
+      "script-ref": "examples/TangoTestBackpressure.java",
+      "description": "Fast producer vs slow consumer: demonstrate onBackpressureLatest/Drop/Buffer strategies"
+    },
+    "verify-spec": {
+      "script-ref": "examples/VerifySpec.java",
+      "description": "Run the reactive-streams TCK against RxTangoAttribute"
+    }
+  }
+}
