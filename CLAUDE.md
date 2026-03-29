@@ -80,6 +80,6 @@ GitHub org uses kebab-case (`rx-controls-suite`, `scientific-software-hub`).
 - [x] Add `CITATION.cff`
 - [x] Add `LICENSE` (AGPL-3.0) + `LICENSE-COMMERCIAL.md`
 - [x] Set up GitHub Actions workflows per sub-project
-- [ ] Add `authors` to `CITATION.cff`
+- [x] Add `authors` to `CITATION.cff`
 - [ ] Add `pyproject.toml` to `RxEpics/python/` (needed for wheel build in CI)
 - [ ] Implement missing `RxEpics/python/src/rxepics/context.py` and `client.py`
