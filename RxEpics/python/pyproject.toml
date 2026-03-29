@@ -1,0 +1,21 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "rxepics"
+version = "0.1.0"
+description = "Reactive streams for EPICS Channel Access"
+readme = "README.md"
+license = { text = "AGPL-3.0" }
+requires-python = ">=3.10"
+dependencies = [
+    "caproto[asyncio]>=1.0",
+    "reactivex>=4.0",
+]
+
+[project.urls]
+Repository = "https://github.com/scientific-software-hub/rx-controls-suite"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/rxepics"]
