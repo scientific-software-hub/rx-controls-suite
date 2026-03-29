@@ -1,0 +1,56 @@
+name: RxTango/java
+
+on:
+  push:
+    paths:
+      - 'RxTango/java/**'
+  pull_request:
+    paths:
+      - 'RxTango/java/**'
+
+defaults:
+  run:
+    working-directory: RxTango/java
+
+jobs:
+  validate:
+    name: Validate jbang catalog
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java 11
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '11'
+
+      - name: Install jbang
+        uses: jbangdev/setup-jbang@main
+
+      - name: Validate catalog JSON
+        run: jq empty jbang-catalog.json
+
+      - name: Verify all catalog script-refs exist
+        run: |
+          jq -r '.aliases[].["script-ref"]' jbang-catalog.json | while read ref; do
+            if [ ! -f "$ref" ]; then
+              echo "ERROR: catalog references missing file: $ref"
+              exit 1
+            fi
+          done
+          echo "All catalog script-refs are present."
+
+      - name: Check //SOURCES references are resolvable
+        run: |
+          for f in examples/*.java; do
+            grep '//SOURCES' "$f" | sed 's|//SOURCES ||' | tr ' ' '\n' | while read src; do
+              path="examples/$src"
+              if [ ! -f "$path" ]; then
+                echo "ERROR: $f references missing source: $src"
+                exit 1
+              fi
+            done
+          done
+          echo "All //SOURCES references are present."

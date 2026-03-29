@@ -1,0 +1,45 @@
+name: RxEpics/python
+
+on:
+  push:
+    paths:
+      - 'RxEpics/python/**'
+  pull_request:
+    paths:
+      - 'RxEpics/python/**'
+
+defaults:
+  run:
+    working-directory: RxEpics/python
+
+jobs:
+  lint-and-import:
+    name: Lint and import check
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Install dependencies
+        run: uv pip install --system -r requirements.txt
+
+      - name: Import check
+        run: |
+          cd src
+          python -c "import rxepics; print('rxepics imports OK:', rxepics.__all__)"
+
+      - name: Build wheel
+        run: |
+          if [ -f pyproject.toml ]; then
+            uv build
+          else
+            echo "No pyproject.toml yet — skipping wheel build."
+          fi
