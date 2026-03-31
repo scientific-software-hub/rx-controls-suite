@@ -1,6 +1,5 @@
 # TINE FEC address database for jsineServer container
-# SYSSVR: RFC 5737 TEST-NET-1 (192.0.2.1) — non-routable, fails fast (EHOSTUNREACH)
-# so STATE/GLOBALS TLinks don't block during server init waiting for UDP timeout
+# SYSSVR: RFC 5737 TEST-NET-1 (192.0.2.1) — non-routable, fails fast
 FEC_NAME,IP_ADDR,PORT_OFFSET
-JSINESRV,127.0.0.1,0
+JSINESRV,172.25.0.11,0
 SYSSVR,192.0.2.1,0

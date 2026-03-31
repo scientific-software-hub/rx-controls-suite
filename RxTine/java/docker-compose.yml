@@ -1,33 +1,29 @@
+networks:
+  tine:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.25.0.0/24
+
 services:
 
-  # ── TINE sine-wave test device server ───────────────────────────────────────
-  # Runs the official jsineServer from the TINE distribution.
-  # Exports Sine, Amplitude, Frequency, Noise properties on 10 devices.
+  # ── TINE sine-wave test device server ────────────────────────────────────────
+  # Standalone — no ENS required.
+  # Exports Sine, Amplitude, Frequency, Noise on 10 devices (SINEDEV_0…SINEDEV_9).
   #
-  # Context: TEST  |  Server: JSINESRV  |  Devices: SINEDEV_0 .. SINEDEV_9
-  # Client address (direct, no TNS): /TEST/JSINESRV/SINEDEV_0@jsinesrv
-  #
-  # Build: docker compose build
-  # Start: docker compose up -d
-  # Stop:  docker compose down
-
+  # Context: TEST  |  Server: JSINESRV  |  Devices: SINEDEV_0..SINEDEV_9
+  # Client address: /TEST/JSINESRV/SINEDEV_0
   jsinesrv:
     build:
       context: docker/
     image: rxtine-testserver:latest
     container_name: jsinesrv
-    hostname: jsinesrv                # used in client @jsinesrv addressing
-    ports:
-      - "8503:8503"                   # TINE TCP server port (TCP_PORT + PORT_OFFSET=0)
-      - "9003:9003/udp"               # TINE UDP server port (SRV_PORT + PORT_OFFSET=0)
-    volumes:
-      # Override config without rebuilding: place edited files in docker/config/
-      # and uncomment the line below.
-      # - ./docker/config:/tine-config:ro
-      []
+    networks:
+      tine:
+        ipv4_address: 172.25.0.11
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "nc", "-z", "jsinesrv", "8503"]
+      test: ["CMD", "nc", "-z", "172.25.0.11", "8503"]
       interval: 5s
       timeout: 3s
-      retries: 5
+      retries: 10

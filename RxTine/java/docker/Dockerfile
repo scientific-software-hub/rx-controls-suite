@@ -39,4 +39,4 @@ EXPOSE 7000
 
 ENV JAVA_OPTS="-Dtine.home=/tine-config"
 
-ENTRYPOINT ["sh", "-c", "exec java $JAVA_OPTS -cp tine.jar:jsineServer.jar de.desy.tine.example.sine.SineDeviceServer </dev/null"]
+ENTRYPOINT ["sh", "-c", "echo q | java $JAVA_OPTS -cp tine.jar:jsineServer.jar de.desy.tine.example.sine.SineDeviceServer"]

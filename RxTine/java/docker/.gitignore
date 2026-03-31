@@ -1,2 +1,4 @@
 # TINE jars — not on Maven Central, supplied by the user
 *.jar
+# TINE C source package — download from https://tine.desy.de
+tineLinux.tar.gz
