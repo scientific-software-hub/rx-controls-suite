@@ -19,6 +19,8 @@ Usage:
 
 import argparse
 import asyncio
+import os
+import shutil
 import sys
 import time
 from datetime import timedelta
@@ -177,6 +179,90 @@ def tomography_scan(
     )
 
 
+# -- live display (ASCII animation) -------------------------------------------
+
+# Rotation frames for the sample — a rectangular block seen from 8 angles
+# across 180 degrees of rotation.
+# Sample visual: a line inside brackets rotates as the sample turns.
+# [|] = face-on (beam through wide side), [-] = edge-on, [/] [\] = oblique.
+_SAMPLE_FRAMES = [
+    "[|]",   # 0°
+    "[/]",   # 22°
+    "[-]",   # 45°
+    "[\\]",  # 67°  (single backslash in terminal: [\])
+    "[|]",   # 90°
+    "[/]",   # 112°
+    "[-]",   # 135°
+    "[\\]",  # 157°
+]
+
+
+def _sample_art(angle_deg: float) -> str:
+    """Return the ASCII art for the sample at *angle_deg* (0–180)."""
+    idx = int((angle_deg % 180) / 180 * len(_SAMPLE_FRAMES)) % len(_SAMPLE_FRAMES)
+    return _SAMPLE_FRAMES[idx]
+
+
+class LiveDisplay:
+    """Multi-line ASCII animation of the tomography scan.
+
+    Renders a beamline schematic with a rotating sample, progress bar,
+    and live metrics.  Uses ANSI cursor-up sequences to overwrite the
+    previous frame — no screen clearing, no flicker.
+
+    Callable as an ``on_next`` callback for the sample() subscriber.
+    """
+
+    def __init__(self, num_proj: int, display_ms: float):
+        self.num_proj = num_proj
+        self.display_ms = display_ms
+        self._lines = 0
+
+    def __call__(self, frame: tuple) -> None:
+        self._render(frame)
+
+    def _render(self, frame: tuple) -> None:
+        ts, i, angle, counts, beam_cur, beam_px, beam_py = frame
+        pct = min((i + 1) / self.num_proj * 100, 100)
+        w = min(shutil.get_terminal_size().columns, 80) - 2
+
+        bar_w = w - 10
+        filled = int(bar_w * (i + 1) / self.num_proj)
+        bar = "[" + "#" * filled + " " * (bar_w - filled) + "]"
+
+        sample = _sample_art(angle)
+        pos_str = f"({beam_px:+.4f}, {beam_py:+.4f}) mm"
+
+        lines = [
+            f"  \033[1mTomography Scan\033[0m  {pct:5.1f}%",
+            f"  \033[36m" + "─" * (w + 2) + "\033[0m",
+            f"  \033[33m☹\033[0m  \033[33m~~~\033[0m  {sample}  \033[33m~~~\033[0m  \033[32m▓▓\033[0m",
+            f"  Source     Sample        Detector",
+            f"  {beam_cur:.1f} mA    {angle:6.1f}°       {counts:.0f} cts",
+            "",
+            f"  {bar}",
+            f"  {i+1} / {self.num_proj} frames"
+            f"     pos: {pos_str}",
+            "",
+            f"  \033[2mHDF5: every frame | Display: {1000/self.display_ms:.0f} Hz"
+            f" | sample() drops the rest\033[0m",
+        ]
+
+        output = "\n".join(lines)
+
+        if self._lines > 0:
+            # Move cursor up to overwrite the previous render
+            output = f"\033[{self._lines}A" + output
+
+        self._lines = len(lines)
+        print(output, flush=True)
+
+    def cleanup(self) -> None:
+        """Print final newline so the shell prompt lands below the display."""
+        print()
+        print()
+
+
 # -- main ---------------------------------------------------------------------
 
 async def main():
@@ -186,6 +272,8 @@ async def main():
     p.add_argument("--display-ms", type=float, default=250.0)
     p.add_argument("--motor-speed", type=float, default=10.0,
                    help="Motor speed in deg/s (higher = faster scan)")
+    p.add_argument("--ascii", action="store_true",
+                   help="Rich ASCII animation instead of table rows")
     args = p.parse_args()
 
     num_proj = args.projections
@@ -247,11 +335,6 @@ async def main():
     scan_done = asyncio.Event()
     start_time = 0.0
 
-    # -- header --
-    print(f" {'Frame':>5}  {'Angle':>8}  {'Counts':>8}  {'Beam(mA)':>9}"
-          f"  {'PosX(mm)':>10}  {'PosY(mm)':>10}  HDF5  Disp")
-    print(" " + "-" * 78)
-
     # -- build shared source --
     # tomography_scan() returns a cold Observable.  share() makes it hot:
     # one subscription to the source, many observers.
@@ -285,19 +368,37 @@ async def main():
         asyncio.ensure_future(on_scan_error(exc))
 
     # -- branch 2: live display (throttled) --
-    def display_frame(frame):
-        nonlocal display_shown
-        ts, i, angle, counts, beam_cur, beam_px, beam_py = frame
-        display_shown += 1
-        pct = (i + 1) / num_proj * 100
-        print(
-            f"\r {i+1:5d}  {angle:8.3f}  {counts:8.0f}  {beam_cur:9.3f}"
-            f"  {beam_px:10.5f}  {beam_py:10.5f}"
-            f"  {hdf5_written:4d}  {display_shown:3d}"
-            f"  {pct:3.0f}%",
-            end="",
-            flush=True,
-        )
+    live_disp = None
+    if args.ascii:
+        live_disp = LiveDisplay(num_proj, display_ms)
+
+        def display_frame_ascii(frame):
+            nonlocal display_shown
+            display_shown += 1
+            live_disp(frame)
+
+        display_handler = display_frame_ascii
+    else:
+        # -- header --
+        print(f" {'Frame':>5}  {'Angle':>8}  {'Counts':>8}  {'Beam(mA)':>9}"
+              f"  {'PosX(mm)':>10}  {'PosY(mm)':>10}  HDF5  Disp")
+        print(" " + "-" * 78)
+
+        def display_frame_table(frame):
+            nonlocal display_shown
+            ts, i, angle, counts, beam_cur, beam_px, beam_py = frame
+            display_shown += 1
+            pct = (i + 1) / num_proj * 100
+            print(
+                f"\r {i+1:5d}  {angle:8.3f}  {counts:8.0f}  {beam_cur:9.3f}"
+                f"  {beam_px:10.5f}  {beam_py:10.5f}"
+                f"  {hdf5_written:4d}  {display_shown:3d}"
+                f"  {pct:3.0f}%",
+                end="",
+                flush=True,
+            )
+
+        display_handler = display_frame_table
 
     source.subscribe(
         on_next=write_frame,
@@ -308,7 +409,7 @@ async def main():
     source.pipe(
         ops.sample(timedelta(milliseconds=display_ms), scheduler=scheduler),
     ).subscribe(
-        on_next=display_frame,
+        on_next=display_handler,
         scheduler=scheduler,
     )
 
@@ -337,12 +438,18 @@ async def main():
     await scan_done.wait()
     f.close()
 
+    if live_disp is not None:
+        live_disp.cleanup()
+
     elapsed = time.time() - start_time if start_time else 0
     actual_fps = num_proj / elapsed if elapsed > 0 else 0
     actual_drop = (1.0 - display_shown / hdf5_written) * 100 if hdf5_written else 0
 
-    print()
-    print(" " + "=" * 58)
+    if not args.ascii:
+        print()
+
+    w = min(shutil.get_terminal_size().columns, 78)
+    print(" " + "=" * w)
     print(f" Scan complete.")
     print(f" Frames acquired: {hdf5_written}  |  Frames displayed: {display_shown}"
           f"  |  Actual drop: {actual_drop:.0f}%")
