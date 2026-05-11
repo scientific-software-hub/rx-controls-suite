@@ -1,0 +1,158 @@
+# Tomography beamline simulation PVs
+#
+# These PVs represent devices on a typical tomography beamline.
+# Static PVs are driven by a Python simulator; beam diagnostics use
+# calc records with live noise.
+
+# =============================================================================
+# Rotation stage
+# =============================================================================
+
+record(ao, "TOMO:ROT:VAL") {
+    field(DESC, "Rotation stage - target position")
+    field(EGU,  "deg")
+    field(VAL,  "0")
+    field(PREC, "4")
+}
+
+record(ai, "TOMO:ROT:RBV") {
+    field(DESC, "Rotation stage - readback position")
+    field(EGU,  "deg")
+    field(VAL,  "0")
+    field(PREC, "4")
+}
+
+record(ao, "TOMO:ROT:SPEED") {
+    field(DESC, "Rotation stage - speed")
+    field(EGU,  "deg/s")
+    field(VAL,  "1")
+    field(PREC, "2")
+}
+
+record(bi, "TOMO:ROT:MOVN") {
+    field(DESC, "Rotation stage - moving flag")
+    field(ZNAM, "STOPPED")
+    field(ONAM, "MOVING")
+    field(VAL,  "0")
+}
+
+# =============================================================================
+# Detector
+# =============================================================================
+
+record(ao, "TOMO:DET:EXPOSURE") {
+    field(DESC, "Detector - exposure time")
+    field(EGU,  "ms")
+    field(VAL,  "100")
+    field(PREC, "1")
+}
+
+record(bo, "TOMO:DET:ACQUIRE") {
+    field(DESC, "Detector - acquisition trigger")
+    field(ZNAM, "IDLE")
+    field(ONAM, "ACQUIRE")
+    field(VAL,  "0")
+}
+
+record(ai, "TOMO:DET:COUNTS") {
+    field(DESC, "Detector - integrated counts")
+    field(VAL,  "0")
+    field(PREC, "0")
+}
+
+record(bi, "TOMO:DET:ACQUIRING") {
+    field(DESC, "Detector - acquiring flag")
+    field(ZNAM, "IDLE")
+    field(ONAM, "ACQUIRING")
+    field(VAL,  "0")
+}
+
+# =============================================================================
+# Beam diagnostics - live noise via calc records
+# =============================================================================
+
+record(calc, "TOMO:BEAM:CURRENT") {
+    field(DESC, "Beam current ~500 mA with noise")
+    field(EGU,  "mA")
+    field(CALC, "500+(RNDM-0.5)*1.2")
+    field(SCAN, ".2 second")
+    field(PREC, "3")
+}
+
+record(calc, "TOMO:BEAM:POSX") {
+    field(DESC, "Beam centroid X with sub-micron noise")
+    field(EGU,  "mm")
+    field(CALC, "(RNDM-0.5)*0.002")
+    field(SCAN, ".2 second")
+    field(PREC, "5")
+}
+
+record(calc, "TOMO:BEAM:POSY") {
+    field(DESC, "Beam centroid Y with sub-micron noise")
+    field(EGU,  "mm")
+    field(CALC, "(RNDM-0.5)*0.002")
+    field(SCAN, ".2 second")
+    field(PREC, "5")
+}
+
+# =============================================================================
+# Shutter
+# =============================================================================
+
+record(bo, "TOMO:SHUTTER:OPEN") {
+    field(DESC, "Shutter - open/close control")
+    field(ZNAM, "CLOSED")
+    field(ONAM, "OPEN")
+    field(VAL,  "0")
+}
+
+record(bi, "TOMO:SHUTTER:OPEN:STS") {
+    field(DESC, "Shutter - status readback")
+    field(ZNAM, "CLOSED")
+    field(ONAM, "OPEN")
+    field(VAL,  "0")
+}
+
+# =============================================================================
+# Tomography scan state - storage PVs for reactive orchestration
+# =============================================================================
+
+record(longout, "TOMO:SCAN:NUM_PROJ") {
+    field(DESC, "Scan - number of projections")
+    field(VAL,  "180")
+}
+
+record(ao, "TOMO:SCAN:START_ANGLE") {
+    field(DESC, "Scan - start angle")
+    field(EGU,  "deg")
+    field(VAL,  "0")
+    field(PREC, "3")
+}
+
+record(ao, "TOMO:SCAN:STOP_ANGLE") {
+    field(DESC, "Scan - stop angle")
+    field(EGU,  "deg")
+    field(VAL,  "180")
+    field(PREC, "3")
+}
+
+record(ai, "TOMO:SCAN:CUR_ANGLE") {
+    field(DESC, "Scan - current projection angle")
+    field(EGU,  "deg")
+    field(VAL,  "0")
+    field(PREC, "3")
+}
+
+record(longin, "TOMO:SCAN:CUR_PROJ") {
+    field(DESC, "Scan - current projection index")
+    field(VAL,  "0")
+}
+
+record(mbbi, "TOMO:SCAN:STATUS") {
+    field(DESC, "Scan sequencer status")
+    field(ZRST, "IDLE")
+    field(ONST, "RUNNING")
+    field(TWST, "DONE")
+    field(THST, "ABORTED")
+    field(VAL,  "0")
+}

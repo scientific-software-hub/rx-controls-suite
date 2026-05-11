@@ -1,0 +1,22 @@
+services:
+  # EPICS softIoc serving the tomography PVs --------------------------------
+  tomography-ioc:
+    image: ghcr.io/epics-containers/epics-base-developer:7.0.10ec1
+    network_mode: host
+    stdin_open: true
+    tty: true
+    volumes:
+      - ./tomography.db:/tomography.db:ro
+    command: >
+      /epics/epics-base/bin/linux-x86_64/softIoc -d /tomography.db
+
+  # Device simulator — animates motor, detector, and shutter -----------------
+  tomography-sim:
+    build: .
+    network_mode: host
+    depends_on:
+      - tomography-ioc
+    restart: unless-stopped
+    environment:
+      SIM_TICK_RATE: "0.02"
+      CA_TIMEOUT: "15"
