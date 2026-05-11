@@ -10,17 +10,22 @@ The slow display consumer never backpressures the source — sample() drops
 intermediate frames silently. One operator replaces queues, locks, flags,
 and manual accounting.
 
+Build: every step is a composed reactive pipeline. No imperative loops,
+no async sleeps in the scan logic.
+
 Usage:
     python tomography_scan.py [--projections 360] [--exposure-ms 30] [--display-ms 250]
 """
 
 import argparse
 import asyncio
-import os
 import sys
 import time
 from datetime import timedelta
 from pathlib import Path
+
+# Allow running from any directory — point to the rxepics package
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 
 import h5py
 import numpy as np
@@ -29,19 +34,105 @@ import reactivex.operators as ops
 from reactivex.scheduler.eventloop import AsyncIOScheduler
 from caproto.asyncio.client import Context
 
-# -- helpers ------------------------------------------------------------------
-
-async def _read(ctx: Context, name: str) -> float:
-    pv, = await ctx.get_pvs(name)
-    return (await pv.read()).data[0]
+from rxepics.channel import read_pv
+from rxepics.channel_write import write_pv
 
 
-async def _write(ctx: Context, name: str, value) -> None:
-    pv, = await ctx.get_pvs(name)
-    await pv.write([value])
+# -- reactive primitives -------------------------------------------------------
+
+def poll_until(
+    pv_name: str,
+    predicate,
+    period_ms: float,
+    ctx: Context,
+    scheduler,
+) -> rx.Observable:
+    """Poll *pv_name* every *period_ms* until *predicate(value)* is true.
+
+    Emits the first matching value, then completes.  Built from three
+    operators: interval → flat_map(read) → filter → take(1).
+    """
+    return rx.interval(timedelta(milliseconds=period_ms), scheduler=scheduler).pipe(
+        ops.flat_map(lambda _: read_pv(pv_name, ctx)),
+        ops.filter(predicate),
+        ops.take(1),
+    )
 
 
-# -- scan source --------------------------------------------------------------
+# -- projection pipeline -------------------------------------------------------
+
+def acquire_projection(
+    angle: float,
+    index: int,
+    ctx: Context,
+    scheduler,
+) -> rx.Observable:
+    """Reactive pipeline for one tomography projection.
+
+    Returns a single-shot Observable that emits one frame tuple:
+
+        (timestamp, proj_index, angle, counts,
+         beam_current, beam_posx, beam_posy)
+
+    The pipeline:
+      write motor target  →  wait for settle  →  trigger detector
+      →  wait for exposure  →  zip(read results)  →  update scan PVs
+      →  emit frame
+
+    Every step is an Observable — no async/await, no sleep loops.
+    """
+    return (
+        # -- move motor --
+        write_pv("TOMO:ROT:VAL", angle, ctx)
+        .pipe(
+            # wait for motor to settle (MOVN == 0)
+            ops.flat_map(lambda _: poll_until(
+                "TOMO:ROT:MOVN", lambda v: v == 0, 10, ctx, scheduler,
+            )),
+        )
+        # -- trigger detector --
+        .pipe(
+            ops.flat_map(lambda _: write_pv("TOMO:DET:ACQUIRE", 1, ctx)),
+        )
+        # -- wait for acquisition start --
+        .pipe(
+            ops.flat_map(lambda _: poll_until(
+                "TOMO:DET:ACQUIRING", lambda v: v == 1, 5, ctx, scheduler,
+            )),
+        )
+        # -- wait for acquisition complete --
+        .pipe(
+            ops.flat_map(lambda _: poll_until(
+                "TOMO:DET:ACQUIRING", lambda v: v == 0, 5, ctx, scheduler,
+            )),
+        )
+        # -- read detector + beam diagnostics concurrently --
+        .pipe(
+            ops.flat_map(lambda _: rx.zip(
+                read_pv("TOMO:DET:COUNTS", ctx),
+                read_pv("TOMO:BEAM:CURRENT", ctx),
+                read_pv("TOMO:BEAM:POSX", ctx),
+                read_pv("TOMO:BEAM:POSY", ctx),
+            )),
+        )
+        # -- assemble frame tuple --
+        .pipe(
+            ops.map(lambda results: (
+                time.time(), index, angle,
+                results[0], results[1], results[2], results[3],
+            )),
+        )
+        # -- update scan state PVs (pass frame through) --
+        .pipe(
+            ops.flat_map(lambda frame: rx.zip(
+                write_pv("TOMO:SCAN:CUR_ANGLE", frame[2], ctx),
+                write_pv("TOMO:SCAN:CUR_PROJ", frame[1], ctx),
+            ).pipe(ops.map(lambda _: frame))),
+        )
+    )
+
+
+# -- scan composition ----------------------------------------------------------
 
 def tomography_scan(
     ctx: Context,
@@ -50,78 +141,40 @@ def tomography_scan(
     stop_angle: float = 180.0,
     exposure_ms: float = 30.0,
     motor_speed: float = 10.0,
+    scheduler=None,
 ) -> rx.Observable:
     """Return a cold Observable that runs a tomography scan.
 
-    Each emission is a tuple: (timestamp, proj_index, angle, counts,
-    beam_current, beam_posx, beam_posy).
+    Composes the scan from three sections concatenated in order:
+
+      setup writes  →  projection[0..N]  →  teardown write
+
+    Each projection is itself a reactive pipeline.  The scan emits only
+    frame tuples — setup/teardown values are suppressed via ignore_elements().
     """
 
-    def subscribe(observer, scheduler=None):
-        async def _run():
-            try:
-                await _write(ctx, "TOMO:ROT:SPEED", motor_speed)
-                await _write(ctx, "TOMO:DET:EXPOSURE", exposure_ms)
-                await _write(ctx, "TOMO:SCAN:STATUS", 1)  # RUNNING
+    angles = [
+        start_angle + i * (stop_angle - start_angle) / max(num_proj - 1, 1)
+        for i in range(num_proj)
+    ]
 
-                angles = [
-                    start_angle + i * (stop_angle - start_angle) / max(num_proj - 1, 1)
-                    for i in range(num_proj)
-                ]
+    projections = [
+        acquire_projection(angle, i, ctx, scheduler)
+        for i, angle in enumerate(angles)
+    ]
 
-                for i, angle in enumerate(angles):
-                    # --- move motor and wait for settle ---
-                    await _write(ctx, "TOMO:ROT:VAL", angle)
-                    while True:
-                        movn = await _read(ctx, "TOMO:ROT:MOVN")
-                        if movn == 0:
-                            break
-                        await asyncio.sleep(0.005)
-
-                    # --- trigger detector ---
-                    await _write(ctx, "TOMO:DET:ACQUIRE", 1)
-                    # wait for simulator to set ACQUIRING=1
-                    for _ in range(500):
-                        if await _read(ctx, "TOMO:DET:ACQUIRING") == 1:
-                            break
-                        await asyncio.sleep(0.001)
-                    # wait for exposure to finish (ACQUIRING → 0)
-                    for _ in range(5000):
-                        if await _read(ctx, "TOMO:DET:ACQUIRING") == 0:
-                            break
-                        await asyncio.sleep(0.001)
-
-                    # --- read results ---
-                    counts = await _read(ctx, "TOMO:DET:COUNTS")
-                    beam_cur = await _read(ctx, "TOMO:BEAM:CURRENT")
-                    beam_px = await _read(ctx, "TOMO:BEAM:POSX")
-                    beam_py = await _read(ctx, "TOMO:BEAM:POSY")
-                    ts = time.time()
-
-                    # --- update scan PVs ---
-                    await _write(ctx, "TOMO:SCAN:CUR_ANGLE", angle)
-                    await _write(ctx, "TOMO:SCAN:CUR_PROJ", i)
-
-                    observer.on_next((ts, i, angle, counts, beam_cur, beam_px, beam_py))
-
-                await _write(ctx, "TOMO:SCAN:STATUS", 2)  # DONE
-                observer.on_completed()
-
-            except Exception as exc:
-                try:
-                    await _write(ctx, "TOMO:SCAN:STATUS", 3)  # ABORTED
-                except Exception:
-                    pass
-                observer.on_error(exc)
-
-        task = asyncio.ensure_future(_run())
-
-        def dispose():
-            task.cancel()
-
-        return dispose
-
-    return rx.create(subscribe)
+    return rx.concat(
+        # -- setup: configure devices, set scan status = RUNNING --
+        write_pv("TOMO:ROT:SPEED", motor_speed, ctx).pipe(
+            ops.flat_map(lambda _: write_pv("TOMO:DET:EXPOSURE", exposure_ms, ctx)),
+            ops.flat_map(lambda _: write_pv("TOMO:SCAN:STATUS", 1, ctx)),
+            ops.ignore_elements(),
+        ),
+        # -- the scan: each projection runs only after the previous completes --
+        *projections,
+        # -- teardown: set scan status = DONE --
+        write_pv("TOMO:SCAN:STATUS", 2, ctx).pipe(ops.ignore_elements()),
+    )
 
 
 # -- main ---------------------------------------------------------------------
@@ -200,6 +253,8 @@ async def main():
     print(" " + "-" * 78)
 
     # -- build shared source --
+    # tomography_scan() returns a cold Observable.  share() makes it hot:
+    # one subscription to the source, many observers.
     source = tomography_scan(
         ctx,
         num_proj=num_proj,
@@ -207,6 +262,7 @@ async def main():
         stop_angle=180.0,
         exposure_ms=exposure_ms,
         motor_speed=motor_speed,
+        scheduler=scheduler,
     ).pipe(ops.share())
 
     # -- branch 1: HDF5 writer (every frame) --
@@ -216,23 +272,23 @@ async def main():
         ds[i] = (ts, i, angle, counts, beam_cur, beam_px, beam_py)
         hdf5_written += 1
 
-    def on_hdf5_error(exc):
-        print(f"\nHDF5 ERROR: {exc}", file=sys.stderr)
+    async def on_scan_error(exc):
+        try:
+            pv, = await ctx.get_pvs("TOMO:SCAN:STATUS")
+            await pv.write([3])
+        except Exception:
+            pass
+        print(f"\nScan ERROR: {exc}", file=sys.stderr)
         scan_done.set()
 
-    source.subscribe(
-        on_next=write_frame,
-        on_error=on_hdf5_error,
-        on_completed=lambda: None,
-        scheduler=scheduler,
-    )
+    def _schedule_error(exc):
+        asyncio.ensure_future(on_scan_error(exc))
 
     # -- branch 2: live display (throttled) --
     def display_frame(frame):
         nonlocal display_shown
         ts, i, angle, counts, beam_cur, beam_px, beam_py = frame
         display_shown += 1
-        elapsed = ts - start_time if start_time else 0
         pct = (i + 1) / num_proj * 100
         print(
             f"\r {i+1:5d}  {angle:8.3f}  {counts:8.0f}  {beam_cur:9.3f}"
@@ -243,29 +299,31 @@ async def main():
             flush=True,
         )
 
-    def on_display_error(exc):
-        print(f"\nDisplay error: {exc}", file=sys.stderr)
+    source.subscribe(
+        on_next=write_frame,
+        on_error=_schedule_error,
+        scheduler=scheduler,
+    )
 
     source.pipe(
         ops.sample(timedelta(milliseconds=display_ms), scheduler=scheduler),
     ).subscribe(
         on_next=display_frame,
-        on_error=on_display_error,
         scheduler=scheduler,
     )
 
     # -- completion handler --
-    def on_scan_completed():
+    def on_completed():
         scan_done.set()
 
     source.subscribe(
         on_next=lambda _: None,
         on_error=lambda e: (print(f"\nScan error: {e}", file=sys.stderr), scan_done.set()),
-        on_completed=on_scan_completed,
+        on_completed=on_completed,
         scheduler=scheduler,
     )
 
-    # record start time when first frame arrives
+    # -- capture start time from first frame --
     def capture_start(frame):
         nonlocal start_time
         if start_time == 0.0:
@@ -277,7 +335,6 @@ async def main():
     )
 
     await scan_done.wait()
-
     f.close()
 
     elapsed = time.time() - start_time if start_time else 0
