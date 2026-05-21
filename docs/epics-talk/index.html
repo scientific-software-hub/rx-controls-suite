@@ -377,6 +377,143 @@
   </div>
 </div>
 
+<!-- ═══════════════════ SLIDE 7 — PAIN POINT 1 ═══════════════════════ -->
+<div class="slide" id="s-pain1">
+  <div class="slide-header">
+    <div class="logo">
+      <div class="logo-mark">Rx</div>
+      <div><strong>Reactive Programming for EPICS Controls</strong></div>
+    </div>
+    <div class="slide-num">2 / 9</div>
+  </div>
+  <div class="slide-body">
+    <div class="section-strip">
+      <span class="section-num">Real Application 1</span>
+      <span class="section-title">Correlated Multi-PV Reads</span>
+      <span class="section-sub">Beyond sequential caget()</span>
+    </div>
+    <div class="two-col">
+      <div class="panel">
+        <span class="label label-navy">The scenario</span>
+        <div class="scenario">
+          "Every 500 ms, read <code>BEAM:CURRENT</code> and <code>BEAM:POSITION</code>
+          from <strong>two different PVs</strong> — and only process the pair
+          if both arrived in the same polling window. Discard if either fails."
+        </div>
+        <span class="label label-orange">With today's tools…</span>
+        <ul class="bullet-list">
+          <li><strong>caget()</strong> from pyepics — sequential; two calls means a timing gap</li>
+          <li class="pain"><code>await aioca.caget(pv1)</code> + <code>await aioca.caget(pv2)</code> — still two separate awaits, still torn</li>
+          <li><code>asyncio.gather(caget(pv1), caget(pv2))</code> — parallel, but pairing and error handling are manual</li>
+          <li class="pain">No built-in "atomic multi-PV read" primitive in CA — every facility rolls its own</li>
+        </ul>
+        <div class="verdict mt-auto">
+          Most facilities end up implementing variations of this pattern —
+          each slightly different, each with its own edge cases around
+          failure handling and timing.
+        </div>
+      </div>
+      <div class="panel">
+        <span class="label label-green">With Rx — zip() &nbsp;·&nbsp; just demoed as <code>pv_correlate</code></span>
+        <div class="code-wrap" style="flex:1;">
+          <div class="code-label">Python · rx.zip()</div>
+          <pre><code class="language-python">rx.interval(
+    timedelta(milliseconds=500), scheduler
+).pipe(
+    ops.flat_map(
+        lambda _: rx.zip(
+            # Both reads fire in parallel
+            read_pv("BEAM:CURRENT",   ctx),
+            read_pv("BEAM:POSITION",  ctx),
+        ).pipe(
+            # Combiner: only runs when BOTH complete
+            ops.map(lambda pair: process(*pair))
+        )
+    )
+).subscribe(
+    on_next=log,
+    on_error=lambda e: log(f"ERROR: {e}")
+)</code></pre>
+        </div>
+        <div class="guarantee">
+          ✓ &nbsp;If either read fails, the pair is silently dropped —
+          never half-processed.<br>
+          ✓ &nbsp;Zero asyncio.Event. Zero shared state.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ SLIDE 8 — PAIN POINT 2 ═══════════════════════ -->
+<div class="slide" id="s-pain2">
+  <div class="slide-header">
+    <div class="logo">
+      <div class="logo-mark">Rx</div>
+      <div><strong>Reactive Programming for EPICS Controls</strong></div>
+    </div>
+    <div class="slide-num">3 / 9</div>
+  </div>
+  <div class="slide-body">
+    <div class="section-strip">
+      <span class="section-num">Real Application 2</span>
+      <span class="section-title">Real-Time Stream Processing</span>
+      <span class="section-sub">Beyond monitor callbacks</span>
+    </div>
+    <div class="two-col">
+      <div class="panel">
+        <span class="label label-navy">The scenario</span>
+        <div class="scenario">
+          "Monitor <code>BEAM:INTENSITY</code> at 20 Hz, compute a 5-sample sliding
+          average, and only write the smoothed value back if it deviates more
+          than 10% from the previous write."
+        </div>
+        <span class="label label-orange">With today's tools…</span>
+        <ul class="bullet-list">
+          <li><strong>pyepics ca.Monitor</strong> callback — you bring the <code>deque(maxlen=5)</code> and the write-guard state</li>
+          <li class="pain">Manual accumulation: a counter, a threshold check, a <code>prev_write</code> float — same scaffolding every time</li>
+          <li>IOC-side CALC record chain — only for simple cases; becomes unmaintainable quickly</li>
+          <li class="pain">p4p <code>Context.monitor()</code> async — cleaner API, same manual window logic</li>
+        </ul>
+        <div class="verdict mt-auto">
+          Most facilities end up reimplementing the same scaffolding —
+          sliding windows, rate control, conditional writes — in slightly
+          different ways each time.
+        </div>
+      </div>
+      <div class="panel">
+        <span class="label label-green">With Rx — just demoed as <code>pv_sliding_average</code></span>
+        <div class="code-wrap" style="flex:1;">
+          <div class="code-label">Python · buffer_with_count + distinct_until_changed</div>
+          <pre><code class="language-python">rx.interval(
+    timedelta(milliseconds=50), scheduler   # 20 Hz
+).pipe(
+    ops.flat_map(
+        lambda _: read_pv("BEAM:INTENSITY", ctx)),
+
+    # sliding window — no deque, no index arithmetic
+    ops.buffer_with_count(5, 1),
+    ops.map(lambda w: statistics.mean(w)),
+
+    # skip write if within 10% of last written value
+    ops.distinct_until_changed(),
+
+    ops.flat_map(
+        lambda v: write_pv("BEAM:SETPOINT", v, ctx))
+).subscribe(
+    on_next=log,
+    on_error=lambda e: log(f"ERROR: {e}")
+)</code></pre>
+        </div>
+        <div class="guarantee">
+          ✓ &nbsp;No deque. No counter. No write-guard variable.<br>
+          ✓ &nbsp;Runs anywhere Python 3.12+ runs — scripts, notebooks, services.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- ═══════════════════ SLIDE 2 — CONTROL SYSTEMS ARE STREAMS ════════ -->
 <div class="slide" id="s-streams">
   <div class="slide-header">
@@ -384,7 +521,7 @@
       <div class="logo-mark">Rx</div>
       <div><strong>Reactive Programming for EPICS Controls</strong></div>
     </div>
-    <div class="slide-num">2 / 9</div>
+    <div class="slide-num">4 / 9</div>
   </div>
   <div class="slide-body">
     <div class="section-strip">
@@ -444,7 +581,7 @@
       <div class="logo-mark">Rx</div>
       <div><strong>Reactive Programming for EPICS Controls</strong></div>
     </div>
-    <div class="slide-num">3 / 9</div>
+    <div class="slide-num">5 / 9</div>
   </div>
   <div class="slide-body">
     <div class="section-strip">
@@ -573,7 +710,7 @@
       <div class="logo-mark">Rx</div>
       <div><strong>Reactive Programming for EPICS Controls</strong></div>
     </div>
-    <div class="slide-num">4 / 9</div>
+    <div class="slide-num">6 / 9</div>
   </div>
   <div class="slide-body">
     <div class="section-strip">
@@ -669,7 +806,7 @@
       <div class="logo-mark">Rx</div>
       <div><strong>Reactive Programming for EPICS Controls</strong></div>
     </div>
-    <div class="slide-num">5 / 9</div>
+    <div class="slide-num">7 / 9</div>
   </div>
   <div class="slide-body">
     <div class="section-strip">
@@ -783,150 +920,13 @@ uv run python examples/pv_pipeline.py</code></pre>
       <div class="logo-mark">Rx</div>
       <div><strong>Reactive Programming for EPICS Controls</strong></div>
     </div>
-    <div class="slide-num">6 / 9</div>
+    <div class="slide-num">8 / 9</div>
   </div>
   <div class="slide-body">
     <div class="section-tag">→ terminal</div>
     <div class="section-main">Live Demo</div>
     <div class="section-hint">
       <em>examples/README.md</em> &nbsp;·&nbsp; uv &nbsp;·&nbsp; docker compose
-    </div>
-  </div>
-</div>
-
-<!-- ═══════════════════ SLIDE 7 — PAIN POINT 1 ═══════════════════════ -->
-<div class="slide" id="s-pain1">
-  <div class="slide-header">
-    <div class="logo">
-      <div class="logo-mark">Rx</div>
-      <div><strong>Reactive Programming for EPICS Controls</strong></div>
-    </div>
-    <div class="slide-num">7 / 9</div>
-  </div>
-  <div class="slide-body">
-    <div class="section-strip">
-      <span class="section-num">Real Application 1</span>
-      <span class="section-title">Correlated Multi-PV Reads</span>
-      <span class="section-sub">Beyond sequential caget()</span>
-    </div>
-    <div class="two-col">
-      <div class="panel">
-        <span class="label label-navy">The scenario</span>
-        <div class="scenario">
-          "Every 500 ms, read <code>BEAM:CURRENT</code> and <code>BEAM:POSITION</code>
-          from <strong>two different PVs</strong> — and only process the pair
-          if both arrived in the same polling window. Discard if either fails."
-        </div>
-        <span class="label label-orange">With today's tools…</span>
-        <ul class="bullet-list">
-          <li><strong>caget()</strong> from pyepics — sequential; two calls means a timing gap</li>
-          <li class="pain"><code>await aioca.caget(pv1)</code> + <code>await aioca.caget(pv2)</code> — still two separate awaits, still torn</li>
-          <li><code>asyncio.gather(caget(pv1), caget(pv2))</code> — parallel, but pairing and error handling are manual</li>
-          <li class="pain">No built-in "atomic multi-PV read" primitive in CA — every facility rolls its own</li>
-        </ul>
-        <div class="verdict mt-auto">
-          Most facilities end up implementing variations of this pattern —
-          each slightly different, each with its own edge cases around
-          failure handling and timing.
-        </div>
-      </div>
-      <div class="panel">
-        <span class="label label-green">With Rx — zip() &nbsp;·&nbsp; just demoed as <code>pv_correlate</code></span>
-        <div class="code-wrap" style="flex:1;">
-          <div class="code-label">Python · rx.zip()</div>
-          <pre><code class="language-python">rx.interval(
-    timedelta(milliseconds=500), scheduler
-).pipe(
-    ops.flat_map(
-        lambda _: rx.zip(
-            # Both reads fire in parallel
-            read_pv("BEAM:CURRENT",   ctx),
-            read_pv("BEAM:POSITION",  ctx),
-        ).pipe(
-            # Combiner: only runs when BOTH complete
-            ops.map(lambda pair: process(*pair))
-        )
-    )
-).subscribe(
-    on_next=log,
-    on_error=lambda e: log(f"ERROR: {e}")
-)</code></pre>
-        </div>
-        <div class="guarantee">
-          ✓ &nbsp;If either read fails, the pair is silently dropped —
-          never half-processed.<br>
-          ✓ &nbsp;Zero asyncio.Event. Zero shared state.
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- ═══════════════════ SLIDE 8 — PAIN POINT 2 ═══════════════════════ -->
-<div class="slide" id="s-pain2">
-  <div class="slide-header">
-    <div class="logo">
-      <div class="logo-mark">Rx</div>
-      <div><strong>Reactive Programming for EPICS Controls</strong></div>
-    </div>
-    <div class="slide-num">8 / 9</div>
-  </div>
-  <div class="slide-body">
-    <div class="section-strip">
-      <span class="section-num">Real Application 2</span>
-      <span class="section-title">Real-Time Stream Processing</span>
-      <span class="section-sub">Beyond monitor callbacks</span>
-    </div>
-    <div class="two-col">
-      <div class="panel">
-        <span class="label label-navy">The scenario</span>
-        <div class="scenario">
-          "Monitor <code>BEAM:INTENSITY</code> at 20 Hz, compute a 5-sample sliding
-          average, and only write the smoothed value back if it deviates more
-          than 10% from the previous write."
-        </div>
-        <span class="label label-orange">With today's tools…</span>
-        <ul class="bullet-list">
-          <li><strong>pyepics ca.Monitor</strong> callback — you bring the <code>deque(maxlen=5)</code> and the write-guard state</li>
-          <li class="pain">Manual accumulation: a counter, a threshold check, a <code>prev_write</code> float — same scaffolding every time</li>
-          <li>IOC-side CALC record chain — only for simple cases; becomes unmaintainable quickly</li>
-          <li class="pain">p4p <code>Context.monitor()</code> async — cleaner API, same manual window logic</li>
-        </ul>
-        <div class="verdict mt-auto">
-          Most facilities end up reimplementing the same scaffolding —
-          sliding windows, rate control, conditional writes — in slightly
-          different ways each time.
-        </div>
-      </div>
-      <div class="panel">
-        <span class="label label-green">With Rx — just demoed as <code>pv_sliding_average</code></span>
-        <div class="code-wrap" style="flex:1;">
-          <div class="code-label">Python · buffer_with_count + distinct_until_changed</div>
-          <pre><code class="language-python">rx.interval(
-    timedelta(milliseconds=50), scheduler   # 20 Hz
-).pipe(
-    ops.flat_map(
-        lambda _: read_pv("BEAM:INTENSITY", ctx)),
-
-    # sliding window — no deque, no index arithmetic
-    ops.buffer_with_count(5, 1),
-    ops.map(lambda w: statistics.mean(w)),
-
-    # skip write if within 10% of last written value
-    ops.distinct_until_changed(),
-
-    ops.flat_map(
-        lambda v: write_pv("BEAM:SETPOINT", v, ctx))
-).subscribe(
-    on_next=log,
-    on_error=lambda e: log(f"ERROR: {e}")
-)</code></pre>
-        </div>
-        <div class="guarantee">
-          ✓ &nbsp;No deque. No counter. No write-guard variable.<br>
-          ✓ &nbsp;Runs anywhere Python 3.12+ runs — scripts, notebooks, services.
-        </div>
-      </div>
     </div>
   </div>
 </div>

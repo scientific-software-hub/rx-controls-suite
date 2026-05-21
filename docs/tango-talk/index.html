@@ -362,7 +362,7 @@
       <div class="logo-mark">Rx</div>
       <div><strong>Reactive Programming for Tango Controls</strong></div>
     </div>
-    <div class="slide-num">1 / 8</div>
+    <div class="slide-num">1 / 9</div>
   </div>
   <div class="slide-body">
     <div class="title-tag">Tango Users Meeting</div>
@@ -378,6 +378,138 @@
   </div>
 </div>
 
+<!-- ═══════════════════ SLIDE 7 — PAIN POINT 1 ═══════════════════════ -->
+<div class="slide" id="s-pain1">
+  <div class="slide-header">
+    <div class="logo">
+      <div class="logo-mark">Rx</div>
+      <div><strong>Reactive Programming for Tango Controls</strong></div>
+    </div>
+    <div class="slide-num">2 / 9</div>
+  </div>
+  <div class="slide-body">
+    <div class="section-strip">
+      <span class="section-num">Real Application 1</span>
+      <span class="section-title">Correlated Multi-Attribute Reads</span>
+      <span class="section-sub">Beyond bulk read</span>
+    </div>
+    <div class="two-col">
+      <div class="panel">
+        <span class="label label-navy">The scenario</span>
+        <div class="scenario">
+          "Every 500 ms, read <code>current</code> and <code>beam_position</code>
+          from <strong>two different devices</strong> — and only process the pair
+          if both arrived in the same polling window. Discard if either fails."
+        </div>
+        <span class="label label-orange">With today's tools…</span>
+        <ul class="bullet-list">
+          <li><strong>read_attributes()</strong> — reduces round-trips, but only works on the <strong>same device</strong></li>
+          <li class="pain">Two sequential reads across devices — a timing gap opens between them</li>
+          <li>Sardana environment monitor — if your facility is already on that stack</li>
+          <li class="pain">Custom thread pair with <strong>CountDownLatch</strong> + careful timeout logic</li>
+        </ul>
+        <div class="verdict mt-auto">
+          Most facilities end up implementing variations of this pattern —
+          each slightly different, each with its own edge cases around
+          failure handling and timing.
+        </div>
+      </div>
+      <div class="panel">
+        <span class="label label-green">With Rx — zip() &nbsp;·&nbsp; just demoed as <code>correlate</code></span>
+        <div class="code-wrap" style="flex:1;">
+          <div class="code-label">Java · Single.zip()</div>
+          <pre><code class="language-java">Flowable.interval(500, MILLISECONDS)
+  .flatMapSingle(tick -> Single.zip(
+
+      // Both reads fire in parallel
+      read(device1, "current")
+          .subscribeOn(Schedulers.io()),
+      read(device2, "beam_position")
+          .subscribeOn(Schedulers.io()),
+
+      // Combiner: only runs when BOTH complete
+      (current, pos) -> process(current, pos)
+
+  ))
+  .blockingSubscribe(
+      result -> log(result),
+      err    -> log("ERROR: " + err)
+  );</code></pre>
+        </div>
+        <div class="guarantee">
+          ✓ &nbsp;If either read fails, the pair is silently dropped —
+          never half-processed.<br>
+          ✓ &nbsp;Zero CountDownLatch. Zero shared state.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ SLIDE 8 — PAIN POINT 2 ═══════════════════════ -->
+<div class="slide" id="s-pain2">
+  <div class="slide-header">
+    <div class="logo">
+      <div class="logo-mark">Rx</div>
+      <div><strong>Reactive Programming for Tango Controls</strong></div>
+    </div>
+    <div class="slide-num">3 / 9</div>
+  </div>
+  <div class="slide-body">
+    <div class="section-strip">
+      <span class="section-num">Real Application 2</span>
+      <span class="section-title">Real-Time Stream Processing</span>
+      <span class="section-sub">Beyond alarm daemons</span>
+    </div>
+    <div class="two-col">
+      <div class="panel">
+        <span class="label label-navy">The scenario</span>
+        <div class="scenario">
+          "Poll <code>double_scalar</code> at 20 Hz, compute a 5-sample sliding
+          average, and only write the smoothed value back if it deviates more
+          than 10% from the previous write."
+        </div>
+        <span class="label label-orange">With today's tools…</span>
+        <ul class="bullet-list">
+          <li><strong>PANIC</strong> — excellent for threshold alerting, but this is not an alarm</li>
+          <li class="pain">Custom Python script: a <code>deque</code>, a counter, a threshold check, a write guard</li>
+          <li>A PANIC formula expression — if the formula engine happens to support it</li>
+          <li>A Sardana macro — if you're already in that stack</li>
+        </ul>
+        <div class="verdict mt-auto">
+          Most facilities end up reimplementing the same scaffolding —
+          sliding windows, rate control, conditional writes — in slightly
+          different ways each time.
+        </div>
+      </div>
+      <div class="panel">
+        <span class="label label-green">With Rx — just demoed as <code>sliding-avg</code> + <code>calibrate</code></span>
+        <div class="code-wrap" style="flex:1;">
+          <div class="code-label">Java · buffer + distinctUntilChanged</div>
+          <pre><code class="language-java">Flowable.interval(50, MILLISECONDS)     // 20 Hz
+  .flatMapSingle(read(device, "double_scalar"))
+
+  // Sliding window — no deque, no index arithmetic
+  .buffer(5, 1)
+  .map(window -> mean(window))
+
+  // Skip write if within 10% of last written value
+  .distinctUntilChanged(
+      (prev, curr) ->
+          Math.abs(curr - prev) / prev < 0.1
+  )
+
+  .flatMapSingle(write(device, "double_scalar_w"));</code></pre>
+        </div>
+        <div class="guarantee">
+          ✓ &nbsp;No daemon. No formula DSL. No deque.<br>
+          ✓ &nbsp;Runs anywhere the JVM runs — Java, Kotlin, Groovy, Scala.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- ═══════════════════ SLIDE 2 — CONTROL SYSTEMS ARE STREAMS ════════ -->
 <div class="slide" id="s-streams">
   <div class="slide-header">
@@ -385,7 +517,7 @@
       <div class="logo-mark">Rx</div>
       <div><strong>Reactive Programming for Tango Controls</strong></div>
     </div>
-    <div class="slide-num">2 / 9</div>
+    <div class="slide-num">4 / 9</div>
   </div>
   <div class="slide-body">
     <div class="section-strip">
@@ -445,7 +577,7 @@
       <div class="logo-mark">Rx</div>
       <div><strong>Reactive Programming for Tango Controls</strong></div>
     </div>
-    <div class="slide-num">3 / 9</div>
+    <div class="slide-num">5 / 9</div>
   </div>
   <div class="slide-body">
     <div class="section-strip">
@@ -573,7 +705,7 @@
       <div class="logo-mark">Rx</div>
       <div><strong>Reactive Programming for Tango Controls</strong></div>
     </div>
-    <div class="slide-num">4 / 9</div>
+    <div class="slide-num">6 / 9</div>
   </div>
   <div class="slide-body">
     <div class="section-strip">
@@ -668,7 +800,7 @@
       <div class="logo-mark">Rx</div>
       <div><strong>Reactive Programming for Tango Controls</strong></div>
     </div>
-    <div class="slide-num">5 / 9</div>
+    <div class="slide-num">7 / 9</div>
   </div>
   <div class="slide-body">
     <div class="section-strip">
@@ -783,145 +915,13 @@ jbang pipeline@. \
       <div class="logo-mark">Rx</div>
       <div><strong>Reactive Programming for Tango Controls</strong></div>
     </div>
-    <div class="slide-num">6 / 9</div>
+    <div class="slide-num">8 / 9</div>
   </div>
   <div class="slide-body">
     <div class="section-tag">→ terminal</div>
     <div class="section-main">Live Demo</div>
     <div class="section-hint">
       <em>examples/README.md</em> &nbsp;·&nbsp; jbang &nbsp;·&nbsp; docker compose
-    </div>
-  </div>
-</div>
-
-<!-- ═══════════════════ SLIDE 7 — PAIN POINT 1 ═══════════════════════ -->
-<div class="slide" id="s-pain1">
-  <div class="slide-header">
-    <div class="logo">
-      <div class="logo-mark">Rx</div>
-      <div><strong>Reactive Programming for Tango Controls</strong></div>
-    </div>
-    <div class="slide-num">7 / 9</div>
-  </div>
-  <div class="slide-body">
-    <div class="section-strip">
-      <span class="section-num">Real Application 1</span>
-      <span class="section-title">Correlated Multi-Attribute Reads</span>
-      <span class="section-sub">Beyond bulk read</span>
-    </div>
-    <div class="two-col">
-      <div class="panel">
-        <span class="label label-navy">The scenario</span>
-        <div class="scenario">
-          "Every 500 ms, read <code>current</code> and <code>beam_position</code>
-          from <strong>two different devices</strong> — and only process the pair
-          if both arrived in the same polling window. Discard if either fails."
-        </div>
-        <span class="label label-orange">With today's tools…</span>
-        <ul class="bullet-list">
-          <li><strong>read_attributes()</strong> — reduces round-trips, but only works on the <strong>same device</strong></li>
-          <li class="pain">Two sequential reads across devices — a timing gap opens between them</li>
-          <li>Sardana environment monitor — if your facility is already on that stack</li>
-          <li class="pain">Custom thread pair with <strong>CountDownLatch</strong> + careful timeout logic</li>
-        </ul>
-        <div class="verdict mt-auto">
-          Most facilities end up implementing variations of this pattern —
-          each slightly different, each with its own edge cases around
-          failure handling and timing.
-        </div>
-      </div>
-      <div class="panel">
-        <span class="label label-green">With Rx — zip() &nbsp;·&nbsp; just demoed as <code>correlate</code></span>
-        <div class="code-wrap" style="flex:1;">
-          <div class="code-label">Java · Single.zip()</div>
-          <pre><code class="language-java">Flowable.interval(500, MILLISECONDS)
-  .flatMapSingle(tick -> Single.zip(
-
-      // Both reads fire in parallel
-      read(device1, "current")
-          .subscribeOn(Schedulers.io()),
-      read(device2, "beam_position")
-          .subscribeOn(Schedulers.io()),
-
-      // Combiner: only runs when BOTH complete
-      (current, pos) -> process(current, pos)
-
-  ))
-  .blockingSubscribe(
-      result -> log(result),
-      err    -> log("ERROR: " + err)
-  );</code></pre>
-        </div>
-        <div class="guarantee">
-          ✓ &nbsp;If either read fails, the pair is silently dropped —
-          never half-processed.<br>
-          ✓ &nbsp;Zero CountDownLatch. Zero shared state.
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- ═══════════════════ SLIDE 8 — PAIN POINT 2 ═══════════════════════ -->
-<div class="slide" id="s-pain2">
-  <div class="slide-header">
-    <div class="logo">
-      <div class="logo-mark">Rx</div>
-      <div><strong>Reactive Programming for Tango Controls</strong></div>
-    </div>
-    <div class="slide-num">8 / 9</div>
-  </div>
-  <div class="slide-body">
-    <div class="section-strip">
-      <span class="section-num">Real Application 2</span>
-      <span class="section-title">Real-Time Stream Processing</span>
-      <span class="section-sub">Beyond alarm daemons</span>
-    </div>
-    <div class="two-col">
-      <div class="panel">
-        <span class="label label-navy">The scenario</span>
-        <div class="scenario">
-          "Poll <code>double_scalar</code> at 20 Hz, compute a 5-sample sliding
-          average, and only write the smoothed value back if it deviates more
-          than 10% from the previous write."
-        </div>
-        <span class="label label-orange">With today's tools…</span>
-        <ul class="bullet-list">
-          <li><strong>PANIC</strong> — excellent for threshold alerting, but this is not an alarm</li>
-          <li class="pain">Custom Python script: a <code>deque</code>, a counter, a threshold check, a write guard</li>
-          <li>A PANIC formula expression — if the formula engine happens to support it</li>
-          <li>A Sardana macro — if you're already in that stack</li>
-        </ul>
-        <div class="verdict mt-auto">
-          Most facilities end up reimplementing the same scaffolding —
-          sliding windows, rate control, conditional writes — in slightly
-          different ways each time.
-        </div>
-      </div>
-      <div class="panel">
-        <span class="label label-green">With Rx — just demoed as <code>sliding-avg</code> + <code>calibrate</code></span>
-        <div class="code-wrap" style="flex:1;">
-          <div class="code-label">Java · buffer + distinctUntilChanged</div>
-          <pre><code class="language-java">Flowable.interval(50, MILLISECONDS)     // 20 Hz
-  .flatMapSingle(read(device, "double_scalar"))
-
-  // Sliding window — no deque, no index arithmetic
-  .buffer(5, 1)
-  .map(window -> mean(window))
-
-  // Skip write if within 10% of last written value
-  .distinctUntilChanged(
-      (prev, curr) ->
-          Math.abs(curr - prev) / prev < 0.1
-  )
-
-  .flatMapSingle(write(device, "double_scalar_w"));</code></pre>
-        </div>
-        <div class="guarantee">
-          ✓ &nbsp;No daemon. No formula DSL. No deque.<br>
-          ✓ &nbsp;Runs anywhere the JVM runs — Java, Kotlin, Groovy, Scala.
-        </div>
-      </div>
     </div>
   </div>
 </div>
