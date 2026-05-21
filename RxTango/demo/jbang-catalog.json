@@ -1,0 +1,28 @@
+{
+  "aliases": {
+    "ring-dashboard": {
+      "script-ref": "scripts/StorageRingDashboard.java",
+      "description": "Live dashboard reading the C++ Tango storage-ring simulator"
+    },
+    "ring-correlation": {
+      "script-ref": "scripts/CorrelatedOrbitSnapshot.java",
+      "description": "Correlated reads across controller and sector devices"
+    },
+    "ring-smoothing": {
+      "script-ref": "scripts/SmoothedCurrentWriter.java",
+      "description": "Sliding average and guarded write-back to the controller"
+    },
+    "ring-interlocks": {
+      "script-ref": "scripts/BeamLossInterlocks.java",
+      "description": "Fan-in alarm stream across the sector devices"
+    },
+    "ring-backpressure": {
+      "script-ref": "scripts/RingBackpressure.java",
+      "description": "Backpressure demo against fast sector polling"
+    },
+    "ring-scenario": {
+      "script-ref": "scripts/SetStorageRingScenario.java",
+      "description": "Switch the storage-ring simulator scenario for live fault demos"
+    }
+  }
+}

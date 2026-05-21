@@ -1,0 +1,1006 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Reactive Programming for EPICS Controls</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/python.min.js"></script>
+<style>
+  :root {
+    --navy:      #1a3a5c;
+    --navy-dk:   #0e2540;
+    --orange:    #e87722;
+    --orange-lt: #f4a24e;
+    --white:     #ffffff;
+    --off-wh:    #f5f7fa;
+    --slate:     #334155;
+    --mid:       #64748b;
+    --border:    #dde3ec;
+    --code-bg:   #1e2a3a;
+    --green:     #166534;
+    --green-bg:  #f0fdf4;
+    --green-bd:  #86efac;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { font-size: 150%; }
+  html, body {
+    width: 100%; height: 100%; overflow: hidden;
+    font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+    background: #000; color: var(--slate);
+  }
+
+  #deck { width: 100%; height: 100%; position: relative; }
+
+  .slide {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column;
+    opacity: 0; pointer-events: none;
+    transition: opacity .35s ease;
+  }
+  .slide.active { opacity: 1; pointer-events: all; }
+
+  /* Header */
+  .slide-header {
+    background: var(--navy-dk); padding: 0 2.5rem; height: 56px;
+    display: flex; align-items: center; justify-content: space-between;
+    flex-shrink: 0; border-bottom: 3px solid var(--orange);
+  }
+  .logo { display: flex; align-items: center; gap: .6rem;
+    font-size: .8rem; color: rgba(255,255,255,.5); }
+  .logo strong { color: #fff; font-size: .92rem; }
+  .logo-mark {
+    width: 28px; height: 28px; border-radius: 5px; background: var(--orange);
+    display: grid; place-items: center;
+    font-weight: 900; font-size: .85rem; color: #fff;
+  }
+  .slide-num { font-size: .72rem; color: rgba(255,255,255,.3); letter-spacing: .08em; }
+
+  /* Section strip */
+  .section-strip {
+    background: var(--navy); padding: 1rem 2.5rem;
+    display: flex; align-items: baseline; gap: 1rem; flex-shrink: 0;
+  }
+  .section-num   { font-size: .65rem; letter-spacing: .15em; text-transform: uppercase;
+    color: var(--orange); font-weight: 700; }
+  .section-title { font-size: 1.5rem; font-weight: 700; color: #fff; line-height: 1.2; }
+  .section-sub   { font-size: .85rem; color: rgba(255,255,255,.4); margin-left: auto; }
+
+  /* Labels */
+  .label {
+    display: inline-flex; align-items: center; font-size: .63rem; font-weight: 700;
+    letter-spacing: .1em; text-transform: uppercase;
+    padding: .17rem .52rem; border-radius: 9999px;
+  }
+  .label-orange { background: #fff3e8; color: var(--orange); border: 1px solid #f4c08a; }
+  .label-navy   { background: #e8eef6; color: var(--navy);   border: 1px solid #b8d0ea; }
+  .label-green  { background: var(--green-bg); color: var(--green); border: 1px solid var(--green-bd); }
+
+  /* Two-column layout */
+  .two-col {
+    flex: 1; overflow: hidden;
+    display: grid; grid-template-columns: 1fr 1fr;
+  }
+  .panel {
+    padding: 1.3rem 1.9rem; overflow: hidden;
+    display: flex; flex-direction: column; gap: .8rem;
+  }
+  .panel + .panel { border-left: 1px solid var(--border); }
+
+  .mt-auto { margin-top: auto; }
+  .text-sm { font-size: .78rem; color: var(--mid); line-height: 1.5; }
+
+  .scenario {
+    background: #fff; border-left: 4px solid var(--orange);
+    border-radius: 0 8px 8px 0; padding: .85rem 1rem;
+    font-size: .88rem; font-style: italic; color: var(--slate); line-height: 1.55;
+    box-shadow: 0 1px 4px rgba(0,0,0,.06);
+  }
+
+  .bullet-list { list-style: none; display: flex; flex-direction: column; gap: .45rem; }
+  .bullet-list li {
+    padding-left: 1.25rem; position: relative;
+    font-size: .82rem; color: var(--slate); line-height: 1.45;
+  }
+  .bullet-list li::before { content: '▸'; position: absolute; left: 0;
+    color: var(--mid); font-size: .7rem; top: .14em; }
+  .bullet-list li strong { color: var(--navy); }
+  .bullet-list li.pain { color: #7f1d1d; }
+  .bullet-list li.pain::before { color: #ef4444; }
+
+  .verdict {
+    background: #fff3e8; border: 1px solid #f4c08a; border-radius: 8px;
+    padding: .75rem 1rem; font-size: .82rem; font-weight: 600;
+    color: #7c3800; line-height: 1.45;
+  }
+  .guarantee {
+    background: var(--green-bg); border: 1px solid var(--green-bd);
+    border-radius: 8px; padding: .65rem .95rem;
+    font-size: .79rem; color: var(--green); font-weight: 600; line-height: 1.4;
+  }
+
+  /* Code */
+  .code-wrap {
+    display: flex; flex-direction: column; background: var(--code-bg);
+    border-radius: 9px; overflow: hidden; box-shadow: 0 3px 12px rgba(0,0,0,.18);
+  }
+  .code-label {
+    background: #162030; padding: .35rem .85rem;
+    font-size: .65rem; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--orange-lt); font-weight: 600;
+    border-bottom: 1px solid rgba(255,255,255,.07); flex-shrink: 0;
+  }
+  .code-wrap pre { margin: 0; }
+  .code-wrap code.hljs {
+    background: var(--code-bg) !important;
+    padding: .75rem .95rem !important; font-size: .74rem; line-height: 1.55;
+  }
+
+  /* ── Global slide body ───────────────────────────────────────────────── */
+  .slide-body {
+    flex: 1; display: flex; flex-direction: column;
+    background: var(--off-wh); overflow: hidden;
+  }
+
+  /* ── SLIDE 1: Title ──────────────────────────────────────────────────── */
+  #s-title .slide-body,
+  #s-thanks .slide-body {
+    flex: 1; background: var(--navy);
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    position: relative; overflow: hidden;
+  }
+  #s-title .slide-body::before,
+  #s-thanks .slide-body::before {
+    content: ''; position: absolute; inset: 0;
+    background:
+      radial-gradient(ellipse 70% 50% at 80% 50%, rgba(232,119,34,.18) 0%, transparent 65%),
+      radial-gradient(ellipse 50% 80% at 20% 80%, rgba(255,255,255,.04) 0%, transparent 60%);
+  }
+  .title-tag { font-size: .7rem; letter-spacing: .2em; text-transform: uppercase;
+    color: var(--orange-lt); margin-bottom: 1rem; z-index: 1; }
+  .title-main { font-size: 3.1rem; font-weight: 800; color: #fff;
+    line-height: 1.1; text-align: center; z-index: 1; }
+  .title-main em { color: var(--orange); font-style: normal; }
+  .title-sub { margin-top: .9rem; font-size: 1.05rem; color: rgba(255,255,255,.58);
+    text-align: center; z-index: 1; }
+  .title-byline { margin-top: .4rem; font-size: .82rem; color: rgba(255,255,255,.32);
+    text-align: center; z-index: 1; }
+  .title-author { margin-top: 1.8rem; z-index: 1;
+    background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.16);
+    border-radius: 9999px; padding: .45rem 1.3rem; color: #fff; font-size: .88rem; }
+  .title-github { margin-top: .9rem; font-size: .77rem; color: rgba(255,255,255,.35); z-index: 1; }
+  .title-github a { color: var(--orange-lt); text-decoration: none; }
+
+  /* ── SLIDE 2: Control Systems Are Streams ───────────────────────────── */
+  .streams-body { flex: 1; overflow: hidden; display: grid; grid-template-columns: 1fr 1fr; }
+
+  .streams-left { padding: 1.4rem 2rem; background: var(--navy);
+    display: flex; flex-direction: column; gap: .9rem; }
+  .streams-left-title { font-size: .65rem; letter-spacing: .15em; text-transform: uppercase;
+    color: var(--orange-lt); font-weight: 700; }
+
+  .flow-chain { display: flex; flex-direction: column; gap: 0; }
+  .fc-box {
+    background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.14);
+    border-radius: 7px; padding: .5rem .9rem;
+    font-size: .8rem; color: rgba(255,255,255,.82); font-weight: 500;
+  }
+  .fc-box .fc-label { font-size: .6rem; letter-spacing: .1em; text-transform: uppercase;
+    color: rgba(255,255,255,.38); display: block; margin-bottom: .12rem; }
+  .fc-arrow { display: flex; align-items: center; gap: .5rem;
+    padding: .12rem 1.1rem; color: var(--orange-lt); font-size: .82rem; }
+  .fc-arrow::before, .fc-arrow::after {
+    content: ''; flex: 1; height: 1px; background: rgba(255,255,255,.1); }
+
+  .streams-right { padding: 1.4rem 2rem; display: flex; flex-direction: column; gap: .9rem; }
+  .contrast-block { border-radius: 9px; overflow: hidden; border: 1px solid var(--border); }
+  .contrast-head { padding: .4rem .95rem; font-size: .65rem; font-weight: 700;
+    letter-spacing: .1em; text-transform: uppercase; }
+  .contrast-head.now { background: #fff3e8; color: #7c3800; }
+  .contrast-head.rx  { background: #e8eef6; color: var(--navy); }
+  .contrast-body { padding: .55rem .95rem; background: #fff;
+    font-family: 'Consolas', monospace; font-size: .77rem;
+    color: var(--slate); line-height: 1.6; }
+  .contrast-body .dim { color: var(--mid); }
+  .contrast-body .hi  { color: var(--orange); font-weight: 700; }
+  .contrast-body .hi2 { color: var(--navy);   font-weight: 700; }
+  .insight {
+    background: var(--navy); color: rgba(255,255,255,.82);
+    border-radius: 8px; padding: .85rem 1rem; font-size: .86rem;
+    line-height: 1.5; font-style: italic; border-left: 3px solid var(--orange);
+  }
+
+  /* ── SLIDE 3: Rx Intro ──────────────────────────────────────────────── */
+  .rx-body { flex: 1; overflow: hidden; display: grid;
+    grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
+  .rx-cell { padding: 1.1rem 1.7rem; display: flex; flex-direction: column; gap: .6rem;
+    border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+  .rx-cell:nth-child(2), .rx-cell:nth-child(4) { border-right: none; }
+  .rx-cell:nth-child(3), .rx-cell:nth-child(4) { border-bottom: none; }
+  .rx-cell-title { font-size: .64rem; letter-spacing: .15em; text-transform: uppercase;
+    color: var(--orange); font-weight: 700; }
+
+  .platform-table { border-collapse: collapse; width: 100%; font-size: .79rem; }
+  .platform-table th { text-align: left; padding: .26rem .5rem; font-size: .63rem;
+    letter-spacing: .1em; text-transform: uppercase; color: var(--mid);
+    border-bottom: 2px solid var(--border); }
+  .platform-table td { padding: .28rem .5rem; color: var(--slate);
+    border-bottom: 1px solid var(--border); }
+  .platform-table td:last-child { color: var(--navy); font-weight: 600; }
+  .platform-table tr:last-child td { border-bottom: none; }
+
+  .iface-list { display: flex; flex-direction: column; gap: .32rem; }
+  .iface-row { display: flex; align-items: center; gap: .6rem; background: #fff;
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: .35rem .75rem; font-size: .77rem; }
+  .iface-badge { background: var(--navy); color: #fff; border-radius: 4px;
+    padding: .12rem .42rem; font-size: .65rem;
+    font-family: 'Consolas', monospace; font-weight: 600; flex-shrink: 0; }
+  .iface-desc { color: var(--mid); font-size: .73rem; }
+
+  .pipeline-viz { display: flex; align-items: center; gap: .28rem; margin: .2rem 0; }
+  .pv-box { background: #fff; border: 2px solid var(--border);
+    border-radius: 7px; padding: .38rem .65rem;
+    font-size: .71rem; font-weight: 600; color: var(--navy);
+    text-align: center; line-height: 1.2; flex: 1; }
+  .pv-box.source { border-color: var(--orange); background: #fff3e8; }
+  .pv-box.sink   { border-color: var(--navy);   background: #e8eef6; }
+  .pv-arrow { color: var(--mid); font-size: .95rem; flex-shrink: 0; }
+
+  .bp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .38rem; }
+  .bp-chip { background: #fff; border: 1px solid var(--border);
+    border-radius: 7px; padding: .42rem .65rem; font-size: .73rem; }
+  .bp-chip code { font-family: 'Consolas', monospace; font-weight: 700;
+    color: var(--orange); font-size: .76rem; display: block; margin-bottom: .12rem; }
+  .bp-chip span { color: var(--mid); font-size: .7rem; }
+
+  /* ── SLIDE 4: Architecture ──────────────────────────────────────────── */
+  .arch-body { flex: 1; overflow: hidden; display: grid; grid-template-columns: 1.1fr 1fr; }
+  .arch-flow { padding: 1.3rem 2rem; display: flex; flex-direction: column; justify-content: center; gap: 0; }
+
+  .af-node { display: flex; align-items: stretch; gap: .8rem; }
+  .af-left { display: flex; flex-direction: column; align-items: center; width: 16px; flex-shrink: 0; }
+  .af-dot  { width: 13px; height: 13px; border-radius: 50%; flex-shrink: 0; margin-top: .55rem; }
+  .af-line { flex: 1; width: 2px; background: var(--border); margin: 2px 0; }
+  .af-card { flex: 1; background: #fff; border: 1px solid var(--border);
+    border-radius: 9px; padding: .62rem 1rem; margin-bottom: .18rem;
+    box-shadow: 0 1px 4px rgba(0,0,0,.05); }
+  .af-card h4 { font-size: .85rem; font-weight: 700; color: var(--navy); margin-bottom: .18rem; }
+  .af-card p  { font-size: .74rem; color: var(--mid); line-height: 1.4; }
+  .af-card code { font-size: .72rem; color: var(--orange); font-weight: 600; }
+
+  .af-node.src .af-dot { background: var(--orange); }
+  .af-node.ops .af-dot { background: #6366f1; }
+  .af-node.app .af-dot { background: var(--navy); }
+  .af-node.out .af-dot { background: #16a34a; }
+  .af-node.src .af-card { border-color: #f4c08a; background: #fff8f0; }
+  .af-node.ops .af-card { border-color: #c7d2fe; background: #f5f3ff; }
+  .af-node.out .af-card { border-color: var(--green-bd); background: var(--green-bg); }
+
+  .arch-example { background: var(--navy); padding: 1.4rem 1.7rem;
+    display: flex; flex-direction: column; gap: .9rem;
+    border-left: 3px solid var(--orange); }
+  .arch-ex-label { font-size: .65rem; letter-spacing: .2em; text-transform: uppercase;
+    color: rgba(255,255,255,.38); font-weight: 600; }
+  .arch-ex-title { font-size: 1rem; font-weight: 700; color: #fff; }
+  .arch-ex-desc  { font-size: .78rem; color: rgba(255,255,255,.52); line-height: 1.5; }
+
+  /* ── SLIDE 5: Demo ──────────────────────────────────────────────────── */
+  .demo-body { flex: 1; overflow: hidden; display: grid; grid-template-columns: 1.15fr 1fr; }
+  .demo-left { padding: 1.1rem 1.7rem; display: flex; flex-direction: column; gap: .75rem; overflow: hidden; }
+  .demo-group-title { font-size: .63rem; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--orange); font-weight: 700; margin-bottom: .22rem;
+    padding-bottom: .18rem; border-bottom: 1px solid var(--border); }
+  .demo-group { display: flex; flex-direction: column; gap: .27rem; }
+  .demo-row { display: grid; grid-template-columns: 8.5rem 1fr; align-items: center;
+    gap: .55rem; background: #fff; border: 1px solid var(--border);
+    border-radius: 7px; padding: .34rem .8rem; font-size: .78rem; }
+  .demo-row.star { border-color: #f4c08a; background: #fff8f0; }
+  .demo-row .alias { font-family: 'Consolas', monospace; font-weight: 700;
+    color: var(--navy); font-size: .74rem; }
+  .demo-row.star .alias { color: var(--orange); }
+  .demo-row .desc { color: var(--mid); font-size: .74rem; }
+
+  .demo-right { background: var(--navy); padding: 1.3rem 1.5rem;
+    display: flex; flex-direction: column; gap: .9rem;
+    border-left: 3px solid var(--orange); }
+  .demo-right-label { font-size: .65rem; letter-spacing: .2em; text-transform: uppercase;
+    color: rgba(255,255,255,.35); font-weight: 600; }
+  .demo-tip { font-size: .77rem; color: rgba(255,255,255,.5); line-height: 1.5; }
+  .demo-tip strong { color: var(--orange-lt); }
+  .demo-repo { margin-top: auto; background: rgba(255,255,255,.06);
+    border: 1px solid rgba(255,255,255,.12); border-radius: 9px;
+    padding: .85rem 1rem; font-size: .78rem; color: rgba(255,255,255,.45); line-height: 1.6; }
+  .demo-repo a { color: var(--orange-lt); text-decoration: none; font-weight: 600; }
+
+  /* ── Live Demo section title slide ─────────────────────────────────── */
+  #s-livedemo .slide-body {
+    flex: 1; background: var(--navy-dk);
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    position: relative; overflow: hidden;
+  }
+  #s-livedemo .slide-body::before {
+    content: ''; position: absolute; inset: 0;
+    background:
+      radial-gradient(ellipse 60% 60% at 20% 50%, rgba(232,119,34,.15) 0%, transparent 65%),
+      radial-gradient(ellipse 40% 70% at 85% 30%, rgba(255,255,255,.03) 0%, transparent 60%);
+  }
+  .section-tag {
+    font-size: .7rem; letter-spacing: .25em; text-transform: uppercase;
+    color: rgba(255,255,255,.35); margin-bottom: 1.1rem; z-index: 1;
+  }
+  .section-main {
+    font-size: 4.5rem; font-weight: 900; color: var(--orange);
+    line-height: 1; text-align: center; z-index: 1; letter-spacing: -.02em;
+  }
+  .section-hint {
+    margin-top: 1.4rem; font-size: 1rem; color: rgba(255,255,255,.4);
+    text-align: center; z-index: 1; font-family: 'Consolas', monospace;
+    letter-spacing: .05em;
+  }
+  .section-hint em { color: var(--orange-lt); font-style: normal; }
+
+  /* Progress & nav */
+  #progress-bar { position: fixed; bottom: 0; left: 0; height: 3px;
+    background: var(--orange); transition: width .35s ease; z-index: 9999; }
+  #nav-hint { position: fixed; bottom: 7px; right: 13px; font-size: .65rem;
+    color: rgba(255,255,255,.18); letter-spacing: .07em; z-index: 9999; pointer-events: none; }
+</style>
+</head>
+<body>
+<div id="deck">
+
+<!-- ═══════════════════ SLIDE 1 — TITLE ══════════════════════════════ -->
+<div class="slide active" id="s-title">
+  <div class="slide-header">
+    <div class="logo">
+      <div class="logo-mark">Rx</div>
+      <div><strong>Reactive Programming for EPICS Controls</strong></div>
+    </div>
+    <div class="slide-num">1 / 9</div>
+  </div>
+  <div class="slide-body">
+    <div class="title-tag">EPICS Collaboration Meeting</div>
+    <div class="title-main">
+      Reactive Programming<br>for <em>EPICS Controls</em>
+    </div>
+    <div class="title-sub">A reference implementation — and a programming model</div>
+    <div class="title-byline">RxEpics · Observable PV streams with reactivex + caproto</div>
+    <div class="title-author">Igor Khokhriakov &nbsp;·&nbsp; Principal Software Engineer</div>
+    <div class="title-github">
+      <a href="https://github.com/scientific-software-hub/rx-controls-suite">github.com/scientific-software-hub/rx-controls-suite</a>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ SLIDE 2 — CONTROL SYSTEMS ARE STREAMS ════════ -->
+<div class="slide" id="s-streams">
+  <div class="slide-header">
+    <div class="logo">
+      <div class="logo-mark">Rx</div>
+      <div><strong>Reactive Programming for EPICS Controls</strong></div>
+    </div>
+    <div class="slide-num">2 / 9</div>
+  </div>
+  <div class="slide-body">
+    <div class="section-strip">
+      <span class="section-num">Framing</span>
+      <span class="section-title">Control Systems Are Already Streams</span>
+      <span class="section-sub">We just don't model them that way</span>
+    </div>
+    <div class="streams-body">
+      <div class="streams-left">
+        <div class="streams-left-title">What your facility actually produces</div>
+        <div class="flow-chain">
+          <div class="fc-box"><span class="fc-label">Source</span>Process variable (PV) updates</div>
+          <div class="fc-arrow">↓</div>
+          <div class="fc-box"><span class="fc-label">Transport</span>Channel Access (CA) monitor subscriptions &nbsp;·&nbsp; DBE_VALUE / DBE_ALARM</div>
+          <div class="fc-arrow">↓</div>
+          <div class="fc-box"><span class="fc-label">Processing</span>Alarm records &nbsp;·&nbsp; soft channel records &nbsp;·&nbsp; archiver data</div>
+          <div class="fc-arrow">↓</div>
+          <div class="fc-box"><span class="fc-label">Output</span>Setpoint writes &nbsp;·&nbsp; soft interlocks &nbsp;·&nbsp; beam-mode changes</div>
+        </div>
+      </div>
+      <div class="streams-right">
+        <div class="contrast-block">
+          <div class="contrast-head now">How most application code treats it today</div>
+          <div class="contrast-body">
+            <span class="hi">poll</span> <span class="dim">→</span>
+            <span class="hi">store</span> <span class="dim">→</span>
+            <span class="hi">check</span> <span class="dim">→</span>
+            <span class="hi">write</span><br>
+            <span class="dim">// loops, threads, shared state,</span><br>
+            <span class="dim">// callbacks scattered everywhere</span>
+          </div>
+        </div>
+        <div class="contrast-block">
+          <div class="contrast-head rx">Reactive programming treats it as streams from the start</div>
+          <div class="contrast-body">
+            <span class="hi2">source</span> <span class="dim">→</span>
+            <span class="hi2">operator</span> <span class="dim">→</span>
+            <span class="hi2">operator</span> <span class="dim">→</span>
+            <span class="hi2">subscriber</span><br>
+            <span class="dim"># composable, declarative, back-pressure-aware</span><br>
+            <span class="dim"># error handling is part of the type system</span>
+          </div>
+        </div>
+        <div class="insight mt-auto">
+          Reactive programming does not introduce a new concept.<br>
+          It gives your system's existing stream nature a proper programming model.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ SLIDE 3 — RX INTRO + BACKPRESSURE ════════════ -->
+<div class="slide" id="s-rx">
+  <div class="slide-header">
+    <div class="logo">
+      <div class="logo-mark">Rx</div>
+      <div><strong>Reactive Programming for EPICS Controls</strong></div>
+    </div>
+    <div class="slide-num">3 / 9</div>
+  </div>
+  <div class="slide-body">
+    <div class="section-strip">
+      <span class="section-num">Concepts</span>
+      <span class="section-title">Reactive Streams — 2 Minutes</span>
+      <span class="section-sub">Not a library. A specification.</span>
+    </div>
+    <div class="rx-body">
+
+      <div class="rx-cell">
+        <div class="rx-cell-title">The Contract — reactive-streams.org</div>
+        <div class="iface-list">
+          <div class="iface-row">
+            <span class="iface-badge">Publisher&lt;T&gt;</span>
+            <span class="iface-desc">Produces items — one method: subscribe()</span>
+          </div>
+          <div class="iface-row">
+            <span class="iface-badge">Subscriber&lt;T&gt;</span>
+            <span class="iface-desc">on_next / on_error / on_completed</span>
+          </div>
+          <div class="iface-row">
+            <span class="iface-badge">Subscription</span>
+            <span class="iface-desc">Back-pressure: request(n) and cancel()</span>
+          </div>
+          <div class="iface-row">
+            <span class="iface-badge">Processor&lt;T,R&gt;</span>
+            <span class="iface-desc">Both Publisher and Subscriber</span>
+          </div>
+        </div>
+        <div class="text-sm mt-auto">
+          4 interfaces. Everything else is implementation.<br>
+          RxEpics observables are built on <strong>reactivex (RxPY v4)</strong>,
+          which implements this spec for Python.
+        </div>
+      </div>
+
+      <div class="rx-cell">
+        <div class="rx-cell-title">Multiplatform — Learn Once, Use Everywhere</div>
+        <table class="platform-table">
+          <thead><tr><th>Platform</th><th>Library</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Python</strong></td><td><strong>RxPY (reactivex)</strong></td></tr>
+            <tr><td>Java / JVM</td><td>RxJava3, Project Reactor</td></tr>
+            <tr><td>Kotlin</td><td>Kotlin Flow</td></tr>
+            <tr><td>JavaScript</td><td>RxJS</td></tr>
+            <tr><td>.NET</td><td>System.Reactive</td></tr>
+            <tr><td>Swift / iOS</td><td>RxSwift</td></tr>
+          </tbody>
+        </table>
+        <div class="text-sm mt-auto">
+          Python scripts, Java servers, JS dashboards — all talking to the
+          same devices. <strong>One paradigm across all of them.</strong>
+        </div>
+      </div>
+
+      <div class="rx-cell">
+        <div class="rx-cell-title">Mental Model — It's a Data Structure</div>
+        <div class="pipeline-viz">
+          <div class="pv-box source">source</div>
+          <div class="pv-arrow">→</div>
+          <div class="pv-box">operator</div>
+          <div class="pv-arrow">→</div>
+          <div class="pv-box">operator</div>
+          <div class="pv-arrow">→</div>
+          <div class="pv-box sink">subscriber</div>
+        </div>
+        <div style="background:#fff;border:1px solid var(--border);border-radius:7px;padding:.5rem .8rem;font-size:.75rem;color:var(--slate);line-height:1.5;">
+          <strong style="color:var(--navy);display:block;margin-bottom:.25rem;">⚠ Common misconception</strong>
+          A reactive stream is <strong>not</strong> just a dynamic callback chain.<br>
+          It is a <strong>lazy, composable data structure</strong> — like
+          <code style="color:var(--orange);">list</code>,
+          <code style="color:var(--orange);">dict</code> or
+          <code style="color:var(--orange);">generator</code>,
+          but for asynchronous sequences.<br>
+          Nothing runs until someone <em>subscribes</em>.
+          Operators build a <em>description</em> of computation, not a running pipeline.
+        </div>
+        <div class="text-sm">
+          Key operators used in demos:<br>
+          <code style="color:var(--orange);font-size:.76rem;">
+            zip · merge · buffer_with_count · scan · throttle_with_timeout · distinct_until_changed
+          </code>
+        </div>
+      </div>
+
+      <div class="rx-cell">
+        <div class="rx-cell-title">Back-Pressure — Flow Control Matters in Control Systems</div>
+        <div class="text-sm">What happens when producers are faster than consumers?</div>
+        <ul class="bullet-list" style="font-size:.77rem;">
+          <li>Detector emitting events faster than analysis code</li>
+          <li>PV bursting DBE_VALUE updates during a scan</li>
+          <li>Multiple PVs feeding a single processing pipeline</li>
+        </ul>
+        <div class="bp-grid">
+          <div class="bp-chip">
+            <code>buffer_with_count()</code>
+            <span>accumulate, process in batches</span>
+          </div>
+          <div class="bp-chip">
+            <code>throttle_with_timeout()</code>
+            <span>keep freshest value per window</span>
+          </div>
+          <div class="bp-chip">
+            <code>sample()</code>
+            <span>emit latest at fixed intervals</span>
+          </div>
+          <div class="bp-chip">
+            <code>ops.filter(gate)</code>
+            <span>explicitly drop excess items</span>
+          </div>
+        </div>
+        <div class="text-sm mt-auto">
+          The application <strong>explicitly defines how overload is handled</strong>
+          — not implicitly through silent callback queue overflow.
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ SLIDE 4 — ARCHITECTURE (data-flow) ═══════════ -->
+<div class="slide" id="s-arch">
+  <div class="slide-header">
+    <div class="logo">
+      <div class="logo-mark">Rx</div>
+      <div><strong>Reactive Programming for EPICS Controls</strong></div>
+    </div>
+    <div class="slide-num">4 / 9</div>
+  </div>
+  <div class="slide-body">
+    <div class="section-strip">
+      <span class="section-num">Library</span>
+      <span class="section-title">RxEpics — Data Flow</span>
+      <span class="section-sub">reference implementation</span>
+    </div>
+    <div class="arch-body">
+
+      <div class="arch-flow">
+        <div class="af-node src">
+          <div class="af-left"><div class="af-dot"></div><div class="af-line"></div></div>
+          <div class="af-card">
+            <h4>EPICS Channel Access PV</h4>
+            <p>caproto Context — single-shot reads &amp; writes,
+              CA monitor subscriptions (DBE_VALUE / DBE_ALARM / DBE_PROPERTY)</p>
+          </div>
+        </div>
+        <div class="af-node ops">
+          <div class="af-left"><div class="af-dot"></div><div class="af-line"></div></div>
+          <div class="af-card">
+            <h4>Reactive Observable</h4>
+            <p><code>read_pv(pv, ctx)</code> · <code>write_pv(pv, val, ctx)</code> ·
+              <code>monitor_pv(pv, ctx)</code>
+              — all <code>rx.Observable</code>, lazy, composable</p>
+          </div>
+        </div>
+        <div class="af-node ops">
+          <div class="af-left"><div class="af-dot"></div><div class="af-line"></div></div>
+          <div class="af-card">
+            <h4>Rx Operators</h4>
+            <p><code>map · zip · merge · buffer_with_count · filter · scan · throttle_with_timeout</code>
+              — compose, transform, correlate, reduce streams</p>
+          </div>
+        </div>
+        <div class="af-node app">
+          <div class="af-left"><div class="af-dot"></div><div class="af-line"></div></div>
+          <div class="af-card">
+            <h4>Application Logic</h4>
+            <p>Pure Python functions — calibration, averaging, threshold checks.
+              No I/O, no shared state.</p>
+          </div>
+        </div>
+        <div class="af-node out">
+          <div class="af-left"><div class="af-dot"></div></div>
+          <div class="af-card">
+            <h4>Writes / Downstream</h4>
+            <p>Results written back to setpoint PVs, forwarded to pipelines,
+              logged to archiver or HDF5</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="arch-example">
+        <div class="arch-ex-label">Real-World Example</div>
+        <div class="arch-ex-title">Beamline Feedback Loop</div>
+        <div class="arch-ex-desc">
+          Detector intensity → sliding average → drift detection → magnet correction
+        </div>
+        <div class="code-wrap">
+          <div class="code-label">Python · feedback pipeline</div>
+          <pre><code class="language-python">monitor_pv("DETECTOR:INTENSITY", ctx).pipe(
+    # noise reduction — no deque
+    ops.buffer_with_count(5, 1),
+    ops.map(lambda w: statistics.mean(w)),
+
+    # only act on out-of-range readings
+    ops.filter(out_of_range),
+
+    # write correction back
+    ops.flat_map(
+        lambda v: write_pv(
+            "MAGNET:SETPOINT", v, ctx))
+).subscribe(on_next=apply, on_error=log)</code></pre>
+        </div>
+        <div class="arch-ex-desc">
+          Same pattern, from single beamline feedback
+          to facility-wide telemetry — without changing the model.
+        </div>
+        <div class="arch-ex-desc mt-auto" style="font-size:.72rem; color:rgba(255,255,255,.28);">
+          Library-agnostic · rx.Observable · asyncio-native · zero build step (uv)
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ SLIDE 5 — DEMO PLAYBOOK ══════════════════════ -->
+<div class="slide" id="s-demo">
+  <div class="slide-header">
+    <div class="logo">
+      <div class="logo-mark">Rx</div>
+      <div><strong>Reactive Programming for EPICS Controls</strong></div>
+    </div>
+    <div class="slide-num">5 / 9</div>
+  </div>
+  <div class="slide-body">
+    <div class="section-strip">
+      <span class="section-num">Demo</span>
+      <span class="section-title">What We'll Run</span>
+      <span class="section-sub">10 runnable examples · uv · no build step</span>
+    </div>
+    <div class="demo-body">
+
+      <div class="demo-left">
+        <div>
+          <div class="demo-group-title">Basic</div>
+          <div class="demo-group">
+            <div class="demo-row">
+              <span class="alias">poll_pv</span>
+              <span class="desc">Continuous read — no loop</span>
+            </div>
+            <div class="demo-row">
+              <span class="alias">monitor_pv</span>
+              <span class="desc">Push updates — no polling at all</span>
+            </div>
+          </div>
+        </div>
+        <div>
+          <div class="demo-group-title">Coordination</div>
+          <div class="demo-group">
+            <div class="demo-row">
+              <span class="alias">multi_pv_snapshot</span>
+              <span class="desc">Parallel reads, concurrent by default</span>
+            </div>
+            <div class="demo-row star">
+              <span class="alias">pv_correlate ★</span>
+              <span class="desc"><strong>zip</strong> — guaranteed atomic pair</span>
+            </div>
+          </div>
+        </div>
+        <div>
+          <div class="demo-group-title">Stream Processing</div>
+          <div class="demo-group">
+            <div class="demo-row star">
+              <span class="alias">alarm_monitor ★</span>
+              <span class="desc"><strong>merge</strong> — isolated per-PV failure</span>
+            </div>
+            <div class="demo-row star">
+              <span class="alias">pv_sliding_average ★</span>
+              <span class="desc"><strong>buffer_with_count(N,1)</strong> — rolling mean</span>
+            </div>
+            <div class="demo-row">
+              <span class="alias">pv_throttle</span>
+              <span class="desc">Rate control with <strong>throttle_with_timeout</strong></span>
+            </div>
+            <div class="demo-row">
+              <span class="alias">pv_running_stats</span>
+              <span class="desc">Live streaming stats with <strong>scan</strong></span>
+            </div>
+          </div>
+        </div>
+        <div>
+          <div class="demo-group-title">Composition</div>
+          <div class="demo-group">
+            <div class="demo-row">
+              <span class="alias">calibration_pipeline</span>
+              <span class="desc">Read → transform → write pipeline</span>
+            </div>
+            <div class="demo-row star">
+              <span class="alias">pv_pipeline ★</span>
+              <span class="desc"><strong>Showstopper</strong> — fluent 6-step chain</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="demo-right">
+        <div class="demo-right-label">Start here</div>
+        <div class="code-wrap">
+          <div class="code-label">shell</div>
+          <pre><code class="language-bash"># 1. Start the EPICS softIoc
+docker compose up -d
+# caproto softIoc with test.db
+# TEST:CALC  TEST:DOUBLE  TEST:STRING
+
+# 2. First example
+uv run python examples/poll_pv.py \
+    TEST:CALC 500
+
+# 3. The showstopper
+uv run python examples/pv_pipeline.py</code></pre>
+        </div>
+        <div class="demo-tip">
+          All examples run from <strong>any Python IDE</strong> with a single
+          click — or directly in the terminal with <strong>uv run</strong>.<br>
+          No venv setup. No pip install.
+        </div>
+        <div class="demo-tip">
+          ★ directly address the real-world patterns shown after the demo.
+        </div>
+        <div class="demo-repo mt-auto">
+          <a href="https://github.com/scientific-software-hub/rx-controls-suite">github.com/scientific-software-hub/rx-controls-suite</a><br>
+          AGPL-3.0 &nbsp;·&nbsp; Python 3.12+ &nbsp;·&nbsp; reactivex + caproto
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ SLIDE 6 — LIVE DEMO SECTION TITLE ════════════ -->
+<div class="slide" id="s-livedemo">
+  <div class="slide-header">
+    <div class="logo">
+      <div class="logo-mark">Rx</div>
+      <div><strong>Reactive Programming for EPICS Controls</strong></div>
+    </div>
+    <div class="slide-num">6 / 9</div>
+  </div>
+  <div class="slide-body">
+    <div class="section-tag">→ terminal</div>
+    <div class="section-main">Live Demo</div>
+    <div class="section-hint">
+      <em>examples/README.md</em> &nbsp;·&nbsp; uv &nbsp;·&nbsp; docker compose
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ SLIDE 7 — PAIN POINT 1 ═══════════════════════ -->
+<div class="slide" id="s-pain1">
+  <div class="slide-header">
+    <div class="logo">
+      <div class="logo-mark">Rx</div>
+      <div><strong>Reactive Programming for EPICS Controls</strong></div>
+    </div>
+    <div class="slide-num">7 / 9</div>
+  </div>
+  <div class="slide-body">
+    <div class="section-strip">
+      <span class="section-num">Real Application 1</span>
+      <span class="section-title">Correlated Multi-PV Reads</span>
+      <span class="section-sub">Beyond sequential caget()</span>
+    </div>
+    <div class="two-col">
+      <div class="panel">
+        <span class="label label-navy">The scenario</span>
+        <div class="scenario">
+          "Every 500 ms, read <code>BEAM:CURRENT</code> and <code>BEAM:POSITION</code>
+          from <strong>two different PVs</strong> — and only process the pair
+          if both arrived in the same polling window. Discard if either fails."
+        </div>
+        <span class="label label-orange">With today's tools…</span>
+        <ul class="bullet-list">
+          <li><strong>caget()</strong> from pyepics — sequential; two calls means a timing gap</li>
+          <li class="pain"><code>await aioca.caget(pv1)</code> + <code>await aioca.caget(pv2)</code> — still two separate awaits, still torn</li>
+          <li><code>asyncio.gather(caget(pv1), caget(pv2))</code> — parallel, but pairing and error handling are manual</li>
+          <li class="pain">No built-in "atomic multi-PV read" primitive in CA — every facility rolls its own</li>
+        </ul>
+        <div class="verdict mt-auto">
+          Most facilities end up implementing variations of this pattern —
+          each slightly different, each with its own edge cases around
+          failure handling and timing.
+        </div>
+      </div>
+      <div class="panel">
+        <span class="label label-green">With Rx — zip() &nbsp;·&nbsp; just demoed as <code>pv_correlate</code></span>
+        <div class="code-wrap" style="flex:1;">
+          <div class="code-label">Python · rx.zip()</div>
+          <pre><code class="language-python">rx.interval(
+    timedelta(milliseconds=500), scheduler
+).pipe(
+    ops.flat_map(
+        lambda _: rx.zip(
+            # Both reads fire in parallel
+            read_pv("BEAM:CURRENT",   ctx),
+            read_pv("BEAM:POSITION",  ctx),
+        ).pipe(
+            # Combiner: only runs when BOTH complete
+            ops.map(lambda pair: process(*pair))
+        )
+    )
+).subscribe(
+    on_next=log,
+    on_error=lambda e: log(f"ERROR: {e}")
+)</code></pre>
+        </div>
+        <div class="guarantee">
+          ✓ &nbsp;If either read fails, the pair is silently dropped —
+          never half-processed.<br>
+          ✓ &nbsp;Zero asyncio.Event. Zero shared state.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ SLIDE 8 — PAIN POINT 2 ═══════════════════════ -->
+<div class="slide" id="s-pain2">
+  <div class="slide-header">
+    <div class="logo">
+      <div class="logo-mark">Rx</div>
+      <div><strong>Reactive Programming for EPICS Controls</strong></div>
+    </div>
+    <div class="slide-num">8 / 9</div>
+  </div>
+  <div class="slide-body">
+    <div class="section-strip">
+      <span class="section-num">Real Application 2</span>
+      <span class="section-title">Real-Time Stream Processing</span>
+      <span class="section-sub">Beyond monitor callbacks</span>
+    </div>
+    <div class="two-col">
+      <div class="panel">
+        <span class="label label-navy">The scenario</span>
+        <div class="scenario">
+          "Monitor <code>BEAM:INTENSITY</code> at 20 Hz, compute a 5-sample sliding
+          average, and only write the smoothed value back if it deviates more
+          than 10% from the previous write."
+        </div>
+        <span class="label label-orange">With today's tools…</span>
+        <ul class="bullet-list">
+          <li><strong>pyepics ca.Monitor</strong> callback — you bring the <code>deque(maxlen=5)</code> and the write-guard state</li>
+          <li class="pain">Manual accumulation: a counter, a threshold check, a <code>prev_write</code> float — same scaffolding every time</li>
+          <li>IOC-side CALC record chain — only for simple cases; becomes unmaintainable quickly</li>
+          <li class="pain">p4p <code>Context.monitor()</code> async — cleaner API, same manual window logic</li>
+        </ul>
+        <div class="verdict mt-auto">
+          Most facilities end up reimplementing the same scaffolding —
+          sliding windows, rate control, conditional writes — in slightly
+          different ways each time.
+        </div>
+      </div>
+      <div class="panel">
+        <span class="label label-green">With Rx — just demoed as <code>pv_sliding_average</code></span>
+        <div class="code-wrap" style="flex:1;">
+          <div class="code-label">Python · buffer_with_count + distinct_until_changed</div>
+          <pre><code class="language-python">rx.interval(
+    timedelta(milliseconds=50), scheduler   # 20 Hz
+).pipe(
+    ops.flat_map(
+        lambda _: read_pv("BEAM:INTENSITY", ctx)),
+
+    # sliding window — no deque, no index arithmetic
+    ops.buffer_with_count(5, 1),
+    ops.map(lambda w: statistics.mean(w)),
+
+    # skip write if within 10% of last written value
+    ops.distinct_until_changed(),
+
+    ops.flat_map(
+        lambda v: write_pv("BEAM:SETPOINT", v, ctx))
+).subscribe(
+    on_next=log,
+    on_error=lambda e: log(f"ERROR: {e}")
+)</code></pre>
+        </div>
+        <div class="guarantee">
+          ✓ &nbsp;No deque. No counter. No write-guard variable.<br>
+          ✓ &nbsp;Runs anywhere Python 3.12+ runs — scripts, notebooks, services.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ SLIDE 9 — THANK YOU ══════════════════════════ -->
+<div class="slide" id="s-thanks">
+  <div class="slide-header">
+    <div class="logo">
+      <div class="logo-mark">Rx</div>
+      <div><strong>Reactive Programming for EPICS Controls</strong></div>
+    </div>
+    <div class="slide-num">9 / 9</div>
+  </div>
+  <div class="slide-body">
+    <div class="section-tag">Reactive Programming for EPICS Controls</div>
+    <div class="section-main" style="font-size:3.2rem;line-height:1.15;">
+      Thank you!<br>
+      <span style="color:rgba(255,255,255,.55);font-size:2.2rem;">Questions?</span>
+    </div>
+    <div style="margin-top:2.5rem;display:flex;flex-direction:column;align-items:center;gap:1.1rem;z-index:1;">
+      <div style="background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.15);border-radius:10px;padding:.9rem 2rem;text-align:center;max-width:520px;">
+        <div style="font-size:.65rem;letter-spacing:.18em;text-transform:uppercase;color:rgba(255,255,255,.35);margin-bottom:.4rem;">Reference implementation</div>
+        <a href="https://github.com/scientific-software-hub/rx-controls-suite" style="color:var(--orange-lt);text-decoration:none;font-size:.95rem;font-weight:600;">github.com/scientific-software-hub/rx-controls-suite</a>
+        <div style="font-size:.75rem;color:rgba(255,255,255,.38);margin-top:.35rem;">
+          AGPL-3.0 &nbsp;·&nbsp; Python 3.12+ &nbsp;·&nbsp; reactivex + caproto
+        </div>
+      </div>
+      <div style="background:rgba(232,119,34,.12);border:1px solid rgba(232,119,34,.3);border-radius:10px;padding:.9rem 2rem;text-align:center;max-width:520px;">
+        <div style="font-size:.65rem;letter-spacing:.18em;text-transform:uppercase;color:var(--orange-lt);margin-bottom:.4rem;">The very same approach works for Tango Controls</div>
+        <a href="../tango-talk/index.html" style="color:var(--orange-lt);text-decoration:none;font-size:.95rem;font-weight:600;">Reactive Programming for Tango Controls →</a>
+        <div style="font-size:.75rem;color:rgba(255,255,255,.38);margin-top:.35rem;">
+          Same spec · same operators · Java / jbang / RxJava3
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</div><!-- /deck -->
+<div id="progress-bar"></div>
+<div id="nav-hint">← → navigate &nbsp;·&nbsp; F fullscreen</div>
+
+<script>
+  hljs.highlightAll();
+  const slides = Array.from(document.querySelectorAll('.slide'));
+  const total  = slides.length;
+  let   cur    = 0;
+
+  function show(n) {
+    slides[cur].classList.remove('active');
+    cur = (n + total) % total;
+    slides[cur].classList.add('active');
+    document.getElementById('progress-bar').style.width =
+      ((cur + 1) / total * 100) + '%';
+  }
+
+  document.addEventListener('keydown', e => {
+    if (['ArrowRight','ArrowDown',' '].includes(e.key)) { e.preventDefault(); show(cur + 1); }
+    if (['ArrowLeft','ArrowUp'].includes(e.key))        { e.preventDefault(); show(cur - 1); }
+    if (e.key === 'f' || e.key === 'F') {
+      if (!document.fullscreenElement) document.documentElement.requestFullscreen();
+      else document.exitFullscreen();
+    }
+  });
+
+  let tx = 0;
+  document.addEventListener('touchstart', e => { tx = e.touches[0].clientX; });
+  document.addEventListener('touchend',   e => {
+    const dx = e.changedTouches[0].clientX - tx;
+    if (dx < -40) show(cur + 1);
+    if (dx >  40) show(cur - 1);
+  });
+
+  show(0);
+</script>
+</body>
+</html>
