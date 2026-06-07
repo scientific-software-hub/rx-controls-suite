@@ -105,6 +105,26 @@ jbang pipeline@.      /TEST/JSINESRV/SINEDEV_0@jsinesrv
 
 ---
 
+## Combined demo — Storage Ring × Beamline
+
+`demo/synchrotron-beamline/` fuses the two simulators into one experiment:
+one Python process reads from the Tango storage ring **and** drives the EPICS tomography
+beamline, demonstrating beam-loss recovery, orbit-quality flagging, vacuum-burst abort,
+and backpressure in a single declarative reactive pipeline.
+
+```shell
+cd demo/synchrotron-beamline
+docker compose up -d --build
+python guarded_scan.py --ascii
+# second terminal
+python inject_fault.py beam_loss
+```
+
+See [`demo/synchrotron-beamline/README.md`](demo/synchrotron-beamline/README.md) and
+[`docs/combined-demo-talk/`](docs/combined-demo-talk/) for the full walkthrough.
+
+---
+
 ## License
 
 [AGPL-3.0](LICENSE) for open / non-commercial use.

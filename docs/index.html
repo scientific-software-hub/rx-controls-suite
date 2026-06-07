@@ -76,11 +76,12 @@
 
   /* ── Talk cards ──────────────────────────────────────────────────── */
   .cards {
-    display: flex; gap: 2rem; z-index: 1;
+    display: flex; flex-wrap: wrap; gap: 1.5rem; z-index: 1;
+    justify-content: center; max-width: 1240px; padding: 0 1rem;
   }
 
   .card {
-    width: 280px;
+    width: 260px;
     background: rgba(255,255,255,.06);
     border: 1px solid rgba(255,255,255,.14);
     border-radius: 14px; overflow: hidden;
@@ -234,6 +235,27 @@
             <div class="card-pattern"><strong>rx.zip</strong> — correlated attribute reads</div>
             <div class="card-pattern"><strong>buffer_with_count + distinct_until_changed</strong></div>
             <div class="card-pattern"><strong>merge</strong> — alarm fan-in · <strong>execute_command</strong></div>
+          </div>
+        </div>
+        <div class="card-cta">Open talk →</div>
+      </a>
+
+      <a class="card" href="combined-demo-talk/index.html" tabindex="0">
+        <div class="card-top">
+          <div class="card-eyebrow">Combined Demo — Capstone</div>
+          <div class="card-title">Storage Ring&nbsp;×&nbsp;Beamline<br>One Reactive Pipeline</div>
+        </div>
+        <div class="card-body">
+          <div class="card-stack">
+            <span class="pill accent">Python</span>
+            <span class="pill">rxtango</span>
+            <span class="pill">rxepics</span>
+            <span class="pill">Docker</span>
+          </div>
+          <div class="card-patterns">
+            <div class="card-pattern"><strong>rx.zip (cross-system)</strong> — EPICS + Tango, atomic frame</div>
+            <div class="card-pattern"><strong>share + filter + take_until</strong> — beam-loss · abort</div>
+            <div class="card-pattern"><strong>distinct_until_changed</strong> — shutter supervisor</div>
           </div>
         </div>
         <div class="card-cta">Open talk →</div>

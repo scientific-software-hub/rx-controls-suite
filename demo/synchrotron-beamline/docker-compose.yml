@@ -1,0 +1,14 @@
+# Combined demo stack — Storage Ring (Tango) + Tomography Beamline (EPICS)
+#
+# Includes both existing stacks unchanged.  Both use host networking and
+# listen on non-conflicting ports:
+#   Tango DB / DBDS  →  localhost:10000
+#   EPICS CA         →  localhost:5064/5065  (OS-default)
+#
+# The Compose `include:` directive resolves each file's build contexts and
+# volume mounts relative to that file's location — existing demos are
+# byte-for-byte unchanged.
+
+include:
+  - ../../RxTango/demo/docker-compose.yml
+  - ../../RxEpics/python/demo/tomography/docker-compose.yml

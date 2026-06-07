@@ -33,6 +33,13 @@ Prerequisites
     uv pip install -e RxTango/python -e RxEpics/python
     docker compose -f RxTango/java/docker-compose.yml up -d   # Tango stack
     docker compose -f RxEpics/python/docker-compose.yml up -d # EPICS soft IOC
+
+See also
+--------
+    demo/synchrotron-beamline/guarded_scan.py — a comprehensive combined demo
+    that fuses a C++ storage-ring simulator (Tango) with a tomography beamline
+    (EPICS): beam-loss recovery, orbit-quality flags, vacuum-burst abort, and
+    backpressure — all in one declarative reactive pipeline.
 """
 
 import asyncio

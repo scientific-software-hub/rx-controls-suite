@@ -17,6 +17,8 @@ rx-controls-suite/
     python/     ← migrated from RxEpics (uv/pip, RxPY v4, caproto[asyncio])
   RxTine/
     java/       ← new (jbang, RxJava3, TINE Java API)
+  demo/
+    synchrotron-beamline/ ← combined demo: Tango ring + EPICS beamline, 4 reactive patterns
   (RxEpics/java, RxTine/python — future)
 ```
 
@@ -106,3 +108,6 @@ GitHub org uses kebab-case (`rx-controls-suite`, `scientific-software-hub`).
 - [x] Add `authors` to `CITATION.cff`
 - [x] Add `pyproject.toml` to `RxEpics/python/` (needed for wheel build in CI)
 - [x] Implement missing `RxEpics/python/src/rxepics/context.py` and `client.py`
+- [x] Add `RxTango/python` — reactive Tango wrapper (PyTango + RxPY v4, mocked tests)
+- [x] Add `demo/synchrotron-beamline/` — combined storage ring + beamline demo (4 reactive patterns)
+- [x] Add `docs/combined-demo-talk/` — capstone HTML deck + slides.md

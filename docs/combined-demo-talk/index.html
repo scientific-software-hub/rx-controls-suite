@@ -1,0 +1,1025 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Reactive Programming Across Control Systems — Storage Ring × Beamline</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/python.min.js"></script>
+<style>
+  :root {
+    --navy:      #1a3a5c;
+    --navy-dk:   #0e2540;
+    --orange:    #e87722;
+    --orange-lt: #f4a24e;
+    --white:     #ffffff;
+    --off-wh:    #f5f7fa;
+    --slate:     #334155;
+    --mid:       #64748b;
+    --border:    #dde3ec;
+    --code-bg:   #1e2a3a;
+    --green:     #166534;
+    --green-bg:  #f0fdf4;
+    --green-bd:  #86efac;
+    --tango:     #e87722;   /* Tango orange */
+    --epics:     #3b82f6;   /* EPICS blue   */
+    --combo:     #7c3aed;   /* combined violet — fusion accent */
+    --combo-lt:  #a78bfa;
+    --combo-bg:  #f5f3ff;
+    --combo-bd:  #c4b5fd;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { font-size: 150%; }
+  html, body {
+    width: 100%; height: 100%; overflow: hidden;
+    font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+    background: #000; color: var(--slate);
+  }
+
+  #deck { width: 100%; height: 100%; position: relative; }
+
+  .slide {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column;
+    opacity: 0; pointer-events: none;
+    transition: opacity .35s ease;
+  }
+  .slide.active { opacity: 1; pointer-events: all; }
+
+  /* Header */
+  .slide-header {
+    background: var(--navy-dk); padding: 0 2.5rem; height: 56px;
+    display: flex; align-items: center; justify-content: space-between;
+    flex-shrink: 0; border-bottom: 3px solid var(--combo);
+  }
+  .logo { display: flex; align-items: center; gap: .6rem;
+    font-size: .8rem; color: rgba(255,255,255,.5); }
+  .logo strong { color: #fff; font-size: .92rem; }
+  .logo-mark {
+    width: 28px; height: 28px; border-radius: 5px;
+    background: linear-gradient(135deg, var(--tango) 50%, var(--epics) 50%);
+    display: grid; place-items: center;
+    font-weight: 900; font-size: .85rem; color: #fff;
+  }
+  .slide-num { font-size: .72rem; color: rgba(255,255,255,.3); letter-spacing: .08em; }
+
+  /* Section strip */
+  .section-strip {
+    background: var(--navy); padding: 1rem 2.5rem;
+    display: flex; align-items: baseline; gap: 1rem; flex-shrink: 0;
+  }
+  .section-num   { font-size: .65rem; letter-spacing: .15em; text-transform: uppercase;
+    color: var(--combo-lt); font-weight: 700; }
+  .section-title { font-size: 1.5rem; font-weight: 700; color: #fff; line-height: 1.2; }
+  .section-sub   { font-size: .85rem; color: rgba(255,255,255,.4); margin-left: auto; }
+
+  /* Labels */
+  .label {
+    display: inline-flex; align-items: center; font-size: .63rem; font-weight: 700;
+    letter-spacing: .1em; text-transform: uppercase;
+    padding: .17rem .52rem; border-radius: 9999px;
+  }
+  .label-orange { background: #fff3e8; color: var(--orange); border: 1px solid #f4c08a; }
+  .label-navy   { background: #e8eef6; color: var(--navy);   border: 1px solid #b8d0ea; }
+  .label-green  { background: var(--green-bg); color: var(--green); border: 1px solid var(--green-bd); }
+  .label-combo  { background: var(--combo-bg); color: var(--combo); border: 1px solid var(--combo-bd); }
+  .label-tango  { background: #fff3e8; color: var(--tango); border: 1px solid #f4c08a; }
+  .label-epics  { background: #eff6ff; color: var(--epics); border: 1px solid #93c5fd; }
+
+  /* Two-column layout */
+  .two-col {
+    flex: 1; overflow: hidden;
+    display: grid; grid-template-columns: 1fr 1fr;
+  }
+  .panel {
+    padding: 1.1rem 1.7rem; overflow: hidden;
+    display: flex; flex-direction: column; gap: .7rem;
+  }
+  .panel + .panel { border-left: 1px solid var(--border); }
+
+  .mt-auto { margin-top: auto; }
+  .text-sm { font-size: .78rem; color: var(--mid); line-height: 1.5; }
+
+  .scenario {
+    background: #fff; border-left: 4px solid var(--combo);
+    border-radius: 0 8px 8px 0; padding: .85rem 1rem;
+    font-size: .88rem; font-style: italic; color: var(--slate); line-height: 1.55;
+    box-shadow: 0 1px 4px rgba(0,0,0,.06);
+  }
+
+  .bullet-list { list-style: none; display: flex; flex-direction: column; gap: .45rem; }
+  .bullet-list li {
+    padding-left: 1.25rem; position: relative;
+    font-size: .82rem; color: var(--slate); line-height: 1.45;
+  }
+  .bullet-list li::before { content: '▸'; position: absolute; left: 0;
+    color: var(--mid); font-size: .7rem; top: .14em; }
+  .bullet-list li strong { color: var(--navy); }
+  .bullet-list li.tango::before { color: var(--tango); }
+  .bullet-list li.epics::before { color: var(--epics); }
+  .bullet-list li.combo::before { color: var(--combo); }
+
+  .verdict {
+    background: var(--combo-bg); border: 1px solid var(--combo-bd); border-radius: 8px;
+    padding: .75rem 1rem; font-size: .82rem; font-weight: 600;
+    color: #4c1d95; line-height: 1.45;
+  }
+  .guarantee {
+    background: var(--green-bg); border: 1px solid var(--green-bd);
+    border-radius: 8px; padding: .65rem .95rem;
+    font-size: .79rem; color: var(--green); font-weight: 600; line-height: 1.4;
+  }
+
+  /* Code */
+  .code-wrap {
+    display: flex; flex-direction: column; background: var(--code-bg);
+    border-radius: 9px; overflow: hidden; box-shadow: 0 3px 12px rgba(0,0,0,.18);
+  }
+  .code-label {
+    background: #162030; padding: .35rem .85rem;
+    font-size: .65rem; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--orange-lt); font-weight: 600;
+    border-bottom: 1px solid rgba(255,255,255,.07); flex-shrink: 0;
+  }
+  .code-label.combo { color: var(--combo-lt); }
+  .code-label.tango { color: var(--orange-lt); }
+  .code-label.epics { color: #93c5fd; }
+  .code-wrap pre { margin: 0; }
+  .code-wrap code.hljs {
+    background: var(--code-bg) !important;
+    padding: .75rem .95rem !important; font-size: .74rem; line-height: 1.55;
+  }
+
+  /* Global slide body */
+  .slide-body {
+    flex: 1; display: flex; flex-direction: column;
+    background: var(--off-wh); overflow: hidden;
+  }
+
+  /* Title / Thanks slides */
+  #s-title .slide-body,
+  #s-thanks .slide-body {
+    flex: 1; background: var(--navy);
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    position: relative; overflow: hidden;
+  }
+  #s-title .slide-body::before,
+  #s-thanks .slide-body::before {
+    content: ''; position: absolute; inset: 0;
+    background:
+      radial-gradient(ellipse 65% 55% at 75% 45%, rgba(124,58,237,.22) 0%, transparent 65%),
+      radial-gradient(ellipse 50% 70% at 20% 70%, rgba(232,119,34,.14) 0%, transparent 60%),
+      radial-gradient(ellipse 40% 50% at 50% 20%, rgba(59,130,246,.10) 0%, transparent 60%);
+  }
+  .title-tag  { font-size: .7rem; letter-spacing: .2em; text-transform: uppercase;
+    color: var(--combo-lt); margin-bottom: 1rem; z-index: 1; }
+  .title-main { font-size: 2.6rem; font-weight: 800; color: #fff;
+    line-height: 1.12; text-align: center; z-index: 1; }
+  .title-main .tg { color: var(--orange-lt); font-style: normal; }
+  .title-main .ep { color: #93c5fd; font-style: normal; }
+  .title-main .cx { color: var(--combo-lt); font-style: normal; }
+  .title-sub  { margin-top: .9rem; font-size: 1rem; color: rgba(255,255,255,.55);
+    text-align: center; z-index: 1; }
+  .title-author { margin-top: 1.8rem; z-index: 1;
+    background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.16);
+    border-radius: 9999px; padding: .45rem 1.3rem; color: #fff; font-size: .88rem; }
+  .title-github { margin-top: .9rem; font-size: .77rem; color: rgba(255,255,255,.35); z-index: 1; }
+  .title-github a { color: var(--combo-lt); text-decoration: none; }
+
+  /* Facility diagram slide */
+  .facility-body {
+    flex: 1; overflow: hidden;
+    display: grid; grid-template-columns: 1fr 1fr;
+  }
+  .facility-panel {
+    padding: 1.2rem 1.8rem; display: flex; flex-direction: column; gap: .65rem;
+    overflow: hidden;
+  }
+  .facility-panel + .facility-panel {
+    border-left: 3px solid var(--combo); background: var(--navy);
+  }
+  .facility-title {
+    font-size: .65rem; letter-spacing: .15em; text-transform: uppercase;
+    font-weight: 700; margin-bottom: .15rem;
+  }
+  .facility-title.tango { color: var(--orange); }
+  .facility-title.epics { color: var(--epics); }
+  .dev-row {
+    display: flex; align-items: flex-start; gap: .55rem;
+    background: #fff; border: 1px solid var(--border);
+    border-radius: 8px; padding: .55rem .85rem;
+    font-size: .78rem; color: var(--slate);
+  }
+  .dev-row.tango { border-left: 3px solid var(--orange); }
+  .dev-row.epics { border-left: 3px solid var(--epics); }
+  .dev-name { font-family: 'Consolas', monospace; font-weight: 700;
+    color: var(--navy); font-size: .73rem; min-width: 7.5rem; }
+  .dev-attrs { display: flex; flex-direction: column; gap: .18rem; }
+  .dev-attr  { font-size: .71rem; color: var(--mid); }
+  .dev-attr code { color: var(--navy); font-weight: 600; }
+  .dev-attr .role { margin-left: .35rem; }
+  .dev-attr .role.gate  { color: var(--orange); font-weight: 700; }
+  .dev-attr .role.abort { color: #dc2626;       font-weight: 700; }
+  .dev-attr .role.qual  { color: #7c3aed;       font-weight: 700; }
+
+  .coupling-box {
+    background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.14);
+    border-radius: 10px; padding: .9rem 1.1rem; display: flex; flex-direction: column; gap: .4rem;
+  }
+  .coupling-title {
+    font-size: .62rem; letter-spacing: .15em; text-transform: uppercase;
+    color: var(--combo-lt); font-weight: 700;
+  }
+  .coupling-line { font-size: .74rem; color: rgba(255,255,255,.6); }
+  .coupling-line code { color: var(--combo-lt); font-size: .73rem; }
+
+  /* Operator table slide */
+  .op-table-body { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
+  .op-grid {
+    flex: 1; display: grid; grid-template-columns: 1fr 1fr;
+    grid-template-rows: 1fr 1fr 1fr;
+  }
+  .op-cell {
+    padding: .85rem 1.4rem; border-right: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    display: flex; flex-direction: column; gap: .4rem; overflow: hidden;
+  }
+  .op-cell:nth-child(even) { border-right: none; }
+  .op-cell:nth-last-child(-n+2) { border-bottom: none; }
+  .op-name  { font-family: 'Consolas', monospace; font-weight: 700;
+    font-size: .82rem; color: var(--combo); }
+  .op-what  { font-size: .72rem; color: var(--navy); font-weight: 600; }
+  .op-desc  { font-size: .71rem; color: var(--mid); line-height: 1.4; }
+  .op-cmd   { margin-top: .2rem; font-family: 'Consolas', monospace;
+    font-size: .67rem; color: var(--orange); }
+
+  /* Progress & nav */
+  #progress-bar { position: fixed; bottom: 0; left: 0; height: 3px;
+    background: var(--combo); transition: width .35s ease; z-index: 9999; }
+  #nav-hint { position: fixed; bottom: 7px; right: 13px; font-size: .65rem;
+    color: rgba(255,255,255,.18); letter-spacing: .07em; z-index: 9999; pointer-events: none; }
+
+  /* Live demo section title slide */
+  #s-livedemo .slide-body {
+    flex: 1; background: var(--navy-dk);
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    position: relative; overflow: hidden;
+  }
+  #s-livedemo .slide-body::before {
+    content: ''; position: absolute; inset: 0;
+    background:
+      radial-gradient(ellipse 60% 60% at 20% 50%, rgba(124,58,237,.18) 0%, transparent 65%),
+      radial-gradient(ellipse 40% 70% at 85% 30%, rgba(232,119,34,.10) 0%, transparent 60%);
+  }
+  .section-tag  { font-size: .7rem; letter-spacing: .25em; text-transform: uppercase;
+    color: rgba(255,255,255,.35); margin-bottom: 1.1rem; z-index: 1; }
+  .section-main { font-size: 4.5rem; font-weight: 900; color: var(--combo-lt);
+    line-height: 1; text-align: center; z-index: 1; letter-spacing: -.02em; }
+  .section-hint { margin-top: 1.4rem; font-size: 1rem; color: rgba(255,255,255,.4);
+    text-align: center; z-index: 1; font-family: 'Consolas', monospace; letter-spacing: .05em; }
+  .section-hint em { color: var(--combo-lt); font-style: normal; }
+</style>
+</head>
+<body>
+<div id="deck">
+
+<!-- ═══════════════════ SLIDE 1 — TITLE ══════════════════════════════ -->
+<div class="slide active" id="s-title">
+  <div class="slide-header">
+    <div class="logo">
+      <div class="logo-mark">Rx</div>
+      <div><strong>Reactive Programming Across Control Systems — Storage Ring × Beamline</strong></div>
+    </div>
+    <div class="slide-num">1 / 11</div>
+  </div>
+  <div class="slide-body">
+    <div class="title-tag">rx-controls-suite · Combined Demo</div>
+    <div class="title-main">
+      <em class="tg">Storage Ring</em>&nbsp;×&nbsp;<em class="ep">Beamline</em><br>
+      <em class="cx">One Reactive Pipeline</em>
+    </div>
+    <div class="title-sub">One Python process · Two control systems · Same operator vocabulary</div>
+    <div class="title-author">Igor Khokhriakov &nbsp;·&nbsp; Principal Software Engineer</div>
+    <div class="title-github">
+      <a href="https://github.com/scientific-software-hub/rx-controls-suite">github.com/scientific-software-hub/rx-controls-suite</a>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ SLIDE 2 — THE FACILITY ═══════════════════════ -->
+<div class="slide" id="s-facility">
+  <div class="slide-header">
+    <div class="logo">
+      <div class="logo-mark">Rx</div>
+      <div><strong>Reactive Programming Across Control Systems</strong></div>
+    </div>
+    <div class="slide-num">2 / 11</div>
+  </div>
+  <div class="slide-body">
+    <div class="section-strip">
+      <span class="section-num">The Facility</span>
+      <span class="section-title">Two Control Systems. One Experiment.</span>
+      <span class="section-sub">storage ring → beamline</span>
+    </div>
+    <div class="facility-body">
+      <!-- Left: devices -->
+      <div class="facility-panel">
+        <div class="facility-title tango">Tango Controls — C++ cppTango</div>
+        <div class="dev-row tango">
+          <div class="dev-name">sr/demo/controller</div>
+          <div class="dev-attrs">
+            <div class="dev-attr"><code>BeamCurrent</code><span class="role gate">→ acquisition gate</span></div>
+            <div class="dev-attr"><code>InterlockCount</code><span class="role abort">→ abort trigger</span></div>
+            <div class="dev-attr"><code>ScenarioId</code> (rw) — inject fault via write</div>
+          </div>
+        </div>
+        <div class="dev-row tango">
+          <div class="dev-name">sr/demo/sector04</div>
+          <div class="dev-attrs">
+            <div class="dev-attr"><code>OrbitX</code><span class="role qual">→ quality flag per frame</span></div>
+            <div class="dev-attr"><code>VacuumPressure, BeamLossFraction</code> — feed interlock</div>
+          </div>
+        </div>
+        <div class="facility-title epics" style="margin-top:.4rem;">EPICS Channel Access — softIoc</div>
+        <div class="dev-row epics">
+          <div class="dev-name">TOMO:ROT:*</div>
+          <div class="dev-attrs">
+            <div class="dev-attr"><code>VAL, MOVN, SPEED</code> — rotation stage control</div>
+          </div>
+        </div>
+        <div class="dev-row epics">
+          <div class="dev-name">TOMO:DET:*</div>
+          <div class="dev-attrs">
+            <div class="dev-attr"><code>ACQUIRE, COUNTS, ACQUIRING, EXPOSURE</code> — detector</div>
+          </div>
+        </div>
+        <div class="dev-row epics">
+          <div class="dev-name">TOMO:SHUTTER:*</div>
+          <div class="dev-attrs">
+            <div class="dev-attr"><code>OPEN</code> — beam shutter</div>
+          </div>
+        </div>
+        <div class="dev-row epics">
+          <div class="dev-name">TOMO:BEAM:POSX/Y</div>
+          <div class="dev-attrs">
+            <div class="dev-attr"><code>beam_posx, beam_posy</code> — position diagnostics</div>
+          </div>
+        </div>
+      </div>
+      <!-- Right: coupling -->
+      <div class="facility-panel">
+        <div class="coupling-title">Cross-system coupling — one client</div>
+        <div class="coupling-box">
+          <div class="coupling-title">Four reactive patterns</div>
+          <div class="coupling-line">🛡 <strong style="color:#fff;">Beam-loss gate</strong> — <code>filter + take(1)</code></div>
+          <div class="coupling-line">⚡ <strong style="color:#fff;">Shutter supervisor</strong> — <code>distinct_until_changed</code></div>
+          <div class="coupling-line">🔬 <strong style="color:#fff;">Quality flagging</strong> — <code>rx.zip (Tango + EPICS)</code></div>
+          <div class="coupling-line">⛔ <strong style="color:#fff;">Vacuum-burst abort</strong> — <code>take_until</code></div>
+          <div class="coupling-line">📦 <strong style="color:#fff;">Backpressure</strong> — <code>share() + sample()</code></div>
+        </div>
+        <div class="coupling-box" style="margin-top:.3rem;">
+          <div class="coupling-title">One shared health stream</div>
+          <div class="coupling-line">
+            <code>ring_health(scheduler)</code><br>
+            <span style="color:rgba(255,255,255,.4);font-size:.7rem;">
+              → polls Tango at 1 Hz · shared by all downstream operators
+            </span>
+          </div>
+        </div>
+        <div class="coupling-box" style="margin-top:auto;">
+          <div class="coupling-title">Fault injection (second terminal)</div>
+          <div class="coupling-line"><code>python inject_fault.py beam_loss</code></div>
+          <div class="coupling-line"><code>python inject_fault.py orbit_drift</code></div>
+          <div class="coupling-line"><code>python inject_fault.py vacuum_burst</code></div>
+          <div class="coupling-line"><code>python inject_fault.py nominal</code></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ SLIDE 3 — THE CROSS-SYSTEM ZIP ═══════════════ -->
+<div class="slide" id="s-zip">
+  <div class="slide-header">
+    <div class="logo">
+      <div class="logo-mark">Rx</div>
+      <div><strong>Reactive Programming Across Control Systems</strong></div>
+    </div>
+    <div class="slide-num">3 / 11</div>
+  </div>
+  <div class="slide-body">
+    <div class="section-strip">
+      <span class="section-num">The Showstopper</span>
+      <span class="section-title">Cross-System rx.zip — One Operator, Two Protocols</span>
+      <span class="section-sub">five reads · in parallel · atomic frame</span>
+    </div>
+    <div class="two-col">
+      <div class="panel">
+        <span class="label label-navy">The scenario</span>
+        <div class="scenario">
+          "After each exposure, read detector counts and beam position from EPICS
+          <em>and</em> ring current and orbit deviation from Tango — simultaneously,
+          atomically. Tag the frame with a quality flag computed from the orbit."
+        </div>
+        <span class="label label-orange">Traditional approach</span>
+        <ul class="bullet-list">
+          <li class="tango">Read Tango attributes sequentially (one DeviceProxy call at a time)</li>
+          <li class="epics">Read EPICS PVs in a separate loop or thread</li>
+          <li>Correlate timestamps in post-processing</li>
+          <li>Manage failures from two different exception hierarchies</li>
+          <li>Shared buffer between threads + Lock + timestamp matching</li>
+        </ul>
+        <div class="verdict mt-auto">
+          In practice: two background threads, a correlation queue,
+          ~50 lines of glue code — before any science logic.
+        </div>
+      </div>
+      <div class="panel">
+        <span class="label label-combo">With rx.zip — one operator, two control systems</span>
+        <div class="code-wrap" style="flex:1;">
+          <div class="code-label combo">Python · rx.zip across EPICS + Tango</div>
+          <pre><code class="language-python">ops.flat_map(lambda _: rx.zip(
+
+    # EPICS Channel Access (caproto)
+    read_pv("TOMO:DET:COUNTS",  ctx),
+    read_pv("TOMO:BEAM:POSX",   ctx),
+    read_pv("TOMO:BEAM:POSY",   ctx),
+
+    # Tango Controls (PyTango)
+    read_attribute(CONTROLLER, "BeamCurrent"),
+    read_attribute(SECTOR_04,  "OrbitX"),
+
+)),
+ops.map(lambda r: (
+    float(r[0]), float(r[1]), float(r[2]),  # EPICS
+    float(r[3]), float(r[4]),               # Tango
+    abs(float(r[4])) &lt; ORBIT_ALARM,        # quality
+))</code></pre>
+        </div>
+        <div class="guarantee">
+          ✓ &nbsp;All five requests fire in parallel.<br>
+          ✓ &nbsp;Frame emitted only when all five complete.<br>
+          ✓ &nbsp;Failure in any one → frame dropped, never half-written.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ SLIDE 4 — RING HEALTH STREAM ════════════════ -->
+<div class="slide" id="s-health">
+  <div class="slide-header">
+    <div class="logo">
+      <div class="logo-mark">Rx</div>
+      <div><strong>Reactive Programming Across Control Systems</strong></div>
+    </div>
+    <div class="slide-num">4 / 11</div>
+  </div>
+  <div class="slide-body">
+    <div class="section-strip">
+      <span class="section-num">Pattern 0</span>
+      <span class="section-title">Ring Health as a Shared Observable</span>
+      <span class="section-sub">one poll, many subscribers</span>
+    </div>
+    <div class="two-col">
+      <div class="panel">
+        <span class="label label-combo">facility.py — the shared source</span>
+        <div class="code-wrap" style="flex:1;">
+          <div class="code-label tango">Python · ring_health()</div>
+          <pre><code class="language-python">Health = namedtuple("Health",
+    ["current", "interlocks", "orbit_x"])
+
+def ring_health(scheduler, interval_ms=1000):
+    return rx.interval(
+        timedelta(milliseconds=interval_ms),
+        scheduler=scheduler,
+    ).pipe(
+        # Read three ring attributes simultaneously
+        ops.flat_map(lambda _: rx.zip(
+            read_attribute(CONTROLLER, "BeamCurrent"),
+            read_attribute(CONTROLLER, "InterlockCount"),
+            read_attribute(SECTOR_04,  "OrbitX"),
+        )),
+        ops.map(lambda t: Health(
+            current=float(t[0]),
+            interlocks=int(t[1]),
+            orbit_x=float(t[2]),
+        )),
+        # One poll stream → many subscribers
+        ops.share(),
+    )</code></pre>
+        </div>
+      </div>
+      <div class="panel">
+        <span class="label label-navy">Why share()?</span>
+        <ul class="bullet-list">
+          <li><strong>One TCP connection</strong> to the Tango server per interval tick</li>
+          <li><strong>Three subscribers</strong> share the same emission: shutter supervisor, abort trigger, per-projection gate</li>
+          <li><strong>No duplicate network traffic</strong> — no matter how many operators listen</li>
+          <li><strong>Deterministic timing</strong> — all subscribers see the same Health value per tick</li>
+        </ul>
+        <span class="label label-combo" style="margin-top:.5rem;">Subscribers of health in this demo</span>
+        <div class="code-wrap">
+          <div class="code-label combo">Python · three consumers</div>
+          <pre><code class="language-python"># 1. Shutter supervisor
+health.pipe(map(beam_ok), distinct_until_changed,
+            flat_map(write_pv(SHUTTER))).subscribe(...)
+
+# 2. Abort trigger (in take_until)
+abort = health.pipe(filter(interlocks &gt; 0), take(1))
+
+# 3. Per-projection gate
+health.pipe(filter(is_healthy), take(1), ignore_elements())</code></pre>
+        </div>
+        <div class="guarantee mt-auto">
+          ✓ &nbsp;One ring poll subscription per second.<br>
+          ✓ &nbsp;All three consumers see the same emission.<br>
+          ✓ &nbsp;No external message bus, no shared dict.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ SLIDE 5 — BEAM LOSS RECOVERY ════════════════ -->
+<div class="slide" id="s-beamloss">
+  <div class="slide-header">
+    <div class="logo">
+      <div class="logo-mark">Rx</div>
+      <div><strong>Reactive Programming Across Control Systems</strong></div>
+    </div>
+    <div class="slide-num">5 / 11</div>
+  </div>
+  <div class="slide-body">
+    <div class="section-strip">
+      <span class="section-num">Pattern 1</span>
+      <span class="section-title">Beam-Loss Recovery — Gate + Shutter Supervisor</span>
+      <span class="section-sub">filter · take(1) · distinct_until_changed</span>
+    </div>
+    <div class="two-col">
+      <div class="panel">
+        <span class="label label-navy">Per-projection gate</span>
+        <div class="code-wrap">
+          <div class="code-label tango">Python · wait_healthy</div>
+          <pre><code class="language-python"># Before each projection: wait for ring health
+wait_healthy = health.pipe(
+    ops.filter(is_healthy),    # ≥ 50 mA, no interlocks
+    ops.take(1),               # complete on first match
+    ops.ignore_elements(),     # timing only
+)
+
+# Each projection is gated
+return rx.concat(wait_healthy, acquire(...))</code></pre>
+        </div>
+        <span class="label label-combo" style="margin-top:.3rem;">Shutter supervisor — runs throughout</span>
+        <div class="code-wrap">
+          <div class="code-label combo">Python · 3 operators</div>
+          <pre><code class="language-python">health.pipe(
+    ops.map(lambda h:
+        h.current &gt;= MIN_BEAM_CURRENT),
+    ops.distinct_until_changed(), # only on transitions
+    ops.flat_map(lambda ok: write_pv(
+        "TOMO:SHUTTER:OPEN", 1 if ok else 0, ctx)),
+).subscribe(on_next=print, scheduler=scheduler)</code></pre>
+        </div>
+      </div>
+      <div class="panel">
+        <span class="label label-orange">Demo sequence</span>
+        <div class="code-wrap">
+          <div class="code-label epics">shell</div>
+          <pre><code class="language-python"># Terminal A: scan running
+python guarded_scan.py --ascii
+
+# Terminal B: inject beam loss
+python inject_fault.py beam_loss
+# → ring current → 25 mA
+# → shutter supervisor writes TOMO:SHUTTER:OPEN = 0
+# → next projection's wait_healthy blocks
+# → "[proj N] waiting for healthy beam..."
+
+# Terminal B: restore
+python inject_fault.py nominal
+# → ring current → ~100 mA
+# → shutter opens (distinct_until_changed fires)
+# → wait_healthy unblocks → projection starts</code></pre>
+        </div>
+        <ul class="bullet-list mt-auto">
+          <li><strong>distinct_until_changed</strong> — shutter only toggles on state transitions, not on every tick</li>
+          <li><strong>wait_healthy</strong> — scan never starts a projection into bad beam</li>
+          <li class="combo"><strong>Zero explicit state machine.</strong> Three operators handle pause, resume, and shutter coordination</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ SLIDE 6 — ORBIT DRIFT QUALITY ═══════════════ -->
+<div class="slide" id="s-orbit">
+  <div class="slide-header">
+    <div class="logo">
+      <div class="logo-mark">Rx</div>
+      <div><strong>Reactive Programming Across Control Systems</strong></div>
+    </div>
+    <div class="slide-num">6 / 11</div>
+  </div>
+  <div class="slide-body">
+    <div class="section-strip">
+      <span class="section-num">Pattern 2</span>
+      <span class="section-title">Orbit-Drift Quality Flagging</span>
+      <span class="section-sub">cross-system zip · quality computed at acquisition time</span>
+    </div>
+    <div class="two-col">
+      <div class="panel">
+        <div class="scenario">
+          "Tag every tomography frame with the storage-ring orbit deviation at the
+          exact moment the detector exposure completed — no timestamp correlation,
+          no post-processing join."
+        </div>
+        <span class="label label-combo">How it works</span>
+        <div class="code-wrap" style="flex:1;">
+          <div class="code-label combo">Python · quality from Tango orbit</div>
+          <pre><code class="language-python"># After detector completes — cross-system zip:
+ops.flat_map(lambda _: rx.zip(
+    read_pv("TOMO:DET:COUNTS",  ctx),   # EPICS
+    read_pv("TOMO:BEAM:POSX",   ctx),   # EPICS
+    read_pv("TOMO:BEAM:POSY",   ctx),   # EPICS
+    read_attribute(CONTROLLER,  # Tango
+        "BeamCurrent"),
+    read_attribute(SECTOR_04,   # Tango
+        "OrbitX"),
+)),
+ops.map(lambda r: (
+    ...,
+    abs(float(r[4])) &lt; 55.0,  # quality_ok
+))</code></pre>
+        </div>
+      </div>
+      <div class="panel">
+        <span class="label label-combo">HDF5 dtype — quality per frame</span>
+        <div class="code-wrap">
+          <div class="code-label combo">Python · HDF5 dataset</div>
+          <pre><code class="language-python">dtype=np.dtype([
+    ("timestamp",    "f8"),
+    ("proj_index",   "i4"),
+    ("angle",        "f4"),
+    ("counts",       "f8"),     # EPICS
+    ("beam_posx",    "f4"),     # EPICS
+    ("beam_posy",    "f4"),     # EPICS
+    ("ring_current", "f4"),     # Tango ← ring
+    ("orbit_x",      "f4"),     # Tango ← ring
+    ("quality_ok",   "?"),      # True/False
+])</code></pre>
+        </div>
+        <div class="code-wrap" style="margin-top:.4rem;">
+          <div class="code-label epics">shell · inject orbit drift</div>
+          <pre><code class="language-python">python inject_fault.py orbit_drift
+# orbit_x → drifts past 55 µm
+# → frames tagged quality_ok = False
+# → live display shows ~ instead of ✓</code></pre>
+        </div>
+        <div class="guarantee mt-auto">
+          ✓ &nbsp;Quality is computed co-temporaneously with acquisition.<br>
+          ✓ &nbsp;No background thread, no ring-state buffer, no join key.<br>
+          ✓ &nbsp;One rx.zip per projection — atomically correct.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ SLIDE 7 — VACUUM BURST ABORT ════════════════ -->
+<div class="slide" id="s-abort">
+  <div class="slide-header">
+    <div class="logo">
+      <div class="logo-mark">Rx</div>
+      <div><strong>Reactive Programming Across Control Systems</strong></div>
+    </div>
+    <div class="slide-num">7 / 11</div>
+  </div>
+  <div class="slide-body">
+    <div class="section-strip">
+      <span class="section-num">Pattern 3</span>
+      <span class="section-title">Vacuum-Burst Abort — take_until</span>
+      <span class="section-sub">one operator terminates a 360-projection scan</span>
+    </div>
+    <div class="two-col">
+      <div class="panel">
+        <div class="scenario">
+          "If any interlock fires during the scan, terminate immediately —
+          close the shutter, write ABORTED status, stop all acquisition."
+        </div>
+        <span class="label label-combo">take_until wraps the entire scan</span>
+        <div class="code-wrap" style="flex:1;">
+          <div class="code-label combo">Python · abort_trigger + take_until</div>
+          <pre><code class="language-python"># Abort fires once: first emission with interlocks > 0
+abort_trigger = health.pipe(
+    ops.filter(lambda h: h.interlocks &gt; 0),
+    ops.take(1),
+    ops.do_action(on_next=lambda h: (
+        scan_aborted.set(),
+        print(f"⚠ VACUUM BURST: "
+              f"interlocks={h.interlocks}")
+    )),
+)
+
+# Wrap the entire 360-projection scan
+scan = rx.concat(
+    setup, *projections, teardown_done
+).pipe(
+    ops.take_until(abort_trigger)   # ← one line
+)
+
+# Emergency teardown (after scan_done.wait())
+if scan_aborted.is_set():
+    rx.zip(
+        write_pv("TOMO:SCAN:STATUS", SCAN_ABORTED, ctx),
+        write_pv("TOMO:SHUTTER:OPEN", 0, ctx),
+    ).subscribe(...)</code></pre>
+        </div>
+      </div>
+      <div class="panel">
+        <span class="label label-orange">Demo sequence</span>
+        <div class="code-wrap">
+          <div class="code-label epics">shell</div>
+          <pre><code class="language-python">python inject_fault.py vacuum_burst
+# C++ simulator: VacuumPressure → high
+# → sector interlocks fire
+# → InterlockCount on controller > 0
+# → abort_trigger emits once
+# → take_until completes the scan stream
+# → scan_aborted.set()
+# → emergency teardown fires:
+#   TOMO:SCAN:STATUS = ABORTED (3)
+#   TOMO:SHUTTER:OPEN = 0</code></pre>
+        </div>
+        <ul class="bullet-list mt-auto">
+          <li><strong>take_until</strong> — terminates an arbitrarily complex rx.concat chain from outside</li>
+          <li><strong>No try/except</strong> in the scan logic — the abort is a first-class observable</li>
+          <li><strong>Composable</strong> — add more abort conditions with a second filter into abort_trigger</li>
+          <li class="combo"><strong>The abort happens at the Rx level</strong> — the scan never sees it as an exception</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ SLIDE 8 — BACKPRESSURE ════════════════════════ -->
+<div class="slide" id="s-bp">
+  <div class="slide-header">
+    <div class="logo">
+      <div class="logo-mark">Rx</div>
+      <div><strong>Reactive Programming Across Control Systems</strong></div>
+    </div>
+    <div class="slide-num">8 / 11</div>
+  </div>
+  <div class="slide-body">
+    <div class="section-strip">
+      <span class="section-num">Pattern 4</span>
+      <span class="section-title">Backpressure — share() + sample()</span>
+      <span class="section-sub">HDF5 keeps all · display drops under load</span>
+    </div>
+    <div class="two-col">
+      <div class="panel">
+        <div class="scenario">
+          "The HDF5 writer must keep every frame. The live display only needs
+          to refresh at human speed. When the scan is fast, the display should
+          drop frames silently — without slowing the acquisition."
+        </div>
+        <span class="label label-combo">share() splits one stream into two branches</span>
+        <div class="code-wrap" style="flex:1;">
+          <div class="code-label combo">Python · share + sample</div>
+          <pre><code class="language-python"># One execution of the scan
+source = guarded_scan(...).pipe(ops.share())
+
+# Branch 1: HDF5 writer — receives every frame
+source.subscribe(
+    on_next=write_frame,       # must not block
+    scheduler=scheduler,
+)
+
+# Branch 2: live display — throttled at 250 ms
+source.pipe(
+    ops.sample(timedelta(milliseconds=250),
+               scheduler=scheduler),
+).subscribe(
+    on_next=display_frame,     # allowed to be slow
+    scheduler=scheduler,
+)</code></pre>
+        </div>
+      </div>
+      <div class="panel">
+        <ul class="bullet-list">
+          <li><strong>share()</strong> — turns the cold Observable hot: one subscription to the source, N observers</li>
+          <li><strong>sample(250 ms)</strong> — keeps the most recent frame per window; drops the rest</li>
+          <li><strong>The slow consumer never backpressures</strong> the fast producer — they are independent</li>
+          <li class="combo"><strong>The application chooses the overload policy explicitly</strong> — not silently swallowed by a queue</li>
+        </ul>
+        <div class="code-wrap mt-auto">
+          <div class="code-label combo">Python · summary stats at the end</div>
+          <pre><code class="language-python">print(f"Frames acquired: {hdf5_written}")
+print(f"Frames displayed: {display_shown}")
+# Actual drop rate = 1 - displayed / acquired
+# e.g.: acquired 360, displayed 12 → 97% dropped
+# HDF5 has all 360 — zero data loss</code></pre>
+        </div>
+        <div class="guarantee">
+          ✓ &nbsp;HDF5: zero frame loss at any scan speed.<br>
+          ✓ &nbsp;Display: automatic drop, no queue overflow.<br>
+          ✓ &nbsp;One operator per branch — no manual accounting.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ SLIDE 9 — FULL PIPELINE ══════════════════════ -->
+<div class="slide" id="s-pipeline">
+  <div class="slide-header">
+    <div class="logo">
+      <div class="logo-mark">Rx</div>
+      <div><strong>Reactive Programming Across Control Systems</strong></div>
+    </div>
+    <div class="slide-num">9 / 11</div>
+  </div>
+  <div class="slide-body">
+    <div class="section-strip">
+      <span class="section-num">The Hero</span>
+      <span class="section-title">guarded_scan.py — All Four Patterns</span>
+      <span class="section-sub">~60 lines of declarative pipeline</span>
+    </div>
+    <div class="two-col">
+      <div class="panel">
+        <span class="label label-combo">Setup — one shared source drives everything</span>
+        <div class="code-wrap" style="flex:1;">
+          <div class="code-label combo">Python · guarded_scan.py (condensed)</div>
+          <pre><code class="language-python">health = ring_health(scheduler)      # shared Tango poll
+
+# Pattern 1: shutter supervisor (3 operators)
+supervisor = health.pipe(
+    ops.map(lambda h: h.current &gt;= 50),
+    ops.distinct_until_changed(),
+    ops.flat_map(lambda ok:
+        write_pv(SHUTTER, 1 if ok else 0, ctx)),
+).subscribe(...)
+
+# Pattern 3: abort trigger (1 filter + take)
+abort = health.pipe(
+    ops.filter(lambda h: h.interlocks &gt; 0),
+    ops.take(1),
+)
+
+# Pattern 1: per-projection health gate
+wait = health.pipe(
+    ops.filter(is_healthy), ops.take(1),
+    ops.ignore_elements(),
+)
+
+# Scan: each projection is gated + cross-system zip
+scan = rx.concat(
+    setup,
+    *[rx.concat(wait, acquire(angle, i, health))
+      for i, angle in enumerate(angles)],
+    teardown,
+).pipe(ops.take_until(abort))        # Pattern 3
+
+# Pattern 4: share + sample
+source = scan.pipe(ops.share())
+source.subscribe(on_next=write_frame)
+source.pipe(ops.sample(250ms)).subscribe(
+    on_next=display_frame)</code></pre>
+        </div>
+      </div>
+      <div class="panel">
+        <span class="label label-combo">Cross-system zip inside each projection</span>
+        <div class="code-wrap">
+          <div class="code-label combo">Python · Pattern 2 — quality per frame</div>
+          <pre><code class="language-python"># After detector exposure completes:
+ops.flat_map(lambda _: rx.zip(
+    read_pv("TOMO:DET:COUNTS",  ctx),   # EPICS
+    read_pv("TOMO:BEAM:POSX",   ctx),   # EPICS
+    read_pv("TOMO:BEAM:POSY",   ctx),   # EPICS
+    read_attribute(CTRL, "BeamCurrent"),# Tango
+    read_attribute(SEC4, "OrbitX"),     # Tango
+)),
+ops.map(lambda r: (
+    *r[:5],
+    abs(r[4]) &lt; ORBIT_ALARM,  # quality
+))</code></pre>
+        </div>
+        <ul class="bullet-list" style="margin-top:.4rem;">
+          <li class="combo"><strong>One file, 60 lines</strong> of pipeline logic</li>
+          <li><strong>Five operators</strong> handle all four fault scenarios</li>
+          <li><strong>No threads, no locks, no flags, no state machine</strong></li>
+          <li><strong>Adding a new fault</strong>: one more filter + hook into take_until</li>
+        </ul>
+        <div class="guarantee mt-auto">
+          ✓ &nbsp;guarded_scan.py + facility.py = ~200 lines total<br>
+          ✓ &nbsp;Equivalent threading code: 800+ lines<br>
+          ✓ &nbsp;Each new requirement adds operators, not complexity
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ SLIDE 10 — LIVE DEMO ═════════════════════════ -->
+<div class="slide" id="s-livedemo">
+  <div class="slide-header">
+    <div class="logo">
+      <div class="logo-mark">Rx</div>
+      <div><strong>Reactive Programming Across Control Systems</strong></div>
+    </div>
+    <div class="slide-num">10 / 11</div>
+  </div>
+  <div class="slide-body">
+    <div class="section-tag">→ terminal</div>
+    <div class="section-main">Live Demo</div>
+    <div class="section-hint">
+      <em>demo/synchrotron-beamline/</em>
+      &nbsp;·&nbsp; docker compose &nbsp;·&nbsp; inject_fault.py
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ SLIDE 11 — THANK YOU ═════════════════════════ -->
+<div class="slide" id="s-thanks">
+  <div class="slide-header">
+    <div class="logo">
+      <div class="logo-mark">Rx</div>
+      <div><strong>Reactive Programming Across Control Systems</strong></div>
+    </div>
+    <div class="slide-num">11 / 11</div>
+  </div>
+  <div class="slide-body">
+    <div class="section-tag">Reactive Programming Across Control Systems</div>
+    <div class="section-main" style="font-size:3rem;line-height:1.15;">
+      Thank you!<br>
+      <span style="color:rgba(255,255,255,.55);font-size:2.2rem;">Questions?</span>
+    </div>
+    <div style="margin-top:2rem;display:flex;flex-direction:column;align-items:center;gap:1rem;z-index:1;">
+      <div style="background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.15);border-radius:10px;padding:.9rem 2rem;text-align:center;max-width:580px;">
+        <div style="font-size:.65rem;letter-spacing:.18em;text-transform:uppercase;color:rgba(255,255,255,.35);margin-bottom:.4rem;">rx-controls-suite</div>
+        <a href="https://github.com/scientific-software-hub/rx-controls-suite" style="color:var(--combo-lt);text-decoration:none;font-size:.95rem;font-weight:600;">github.com/scientific-software-hub/rx-controls-suite</a>
+      </div>
+      <div style="background:rgba(124,58,237,.12);border:1px solid rgba(124,58,237,.3);border-radius:10px;padding:.9rem 2rem;text-align:center;max-width:580px;">
+        <div style="font-size:.65rem;letter-spacing:.18em;text-transform:uppercase;color:var(--combo-lt);margin-bottom:.6rem;">The same operators across every control system</div>
+        <div style="display:flex;gap:1.2rem;justify-content:center;font-size:.8rem;color:rgba(255,255,255,.55);flex-wrap:wrap;">
+          <span><strong style="color:#f4a24e;">RxTango/java</strong><br>Java · jbang</span>
+          <span style="color:rgba(255,255,255,.2);">·</span>
+          <span><strong style="color:#93c5fd;">RxTango/python</strong><br>Python · uv</span>
+          <span style="color:rgba(255,255,255,.2);">·</span>
+          <span><strong style="color:#93c5fd;">RxEpics/python</strong><br>Python · caproto</span>
+          <span style="color:rgba(255,255,255,.2);">·</span>
+          <span><strong style="color:var(--combo-lt);">Combined</strong><br>Tango + EPICS</span>
+        </div>
+        <div style="font-size:.75rem;color:rgba(255,255,255,.38);margin-top:.55rem;">
+          zip · merge · share · distinct_until_changed · take_until · sample
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</div><!-- /deck -->
+<div id="progress-bar"></div>
+<div id="nav-hint">← → navigate &nbsp;·&nbsp; F fullscreen</div>
+
+<script>
+  hljs.highlightAll();
+  const slides = Array.from(document.querySelectorAll('.slide'));
+  const total  = slides.length;
+  let   cur    = 0;
+
+  function show(n) {
+    slides[cur].classList.remove('active');
+    cur = (n + total) % total;
+    slides[cur].classList.add('active');
+    document.getElementById('progress-bar').style.width =
+      ((cur + 1) / total * 100) + '%';
+  }
+
+  document.addEventListener('keydown', e => {
+    if (['ArrowRight','ArrowDown',' '].includes(e.key)) { e.preventDefault(); show(cur + 1); }
+    if (['ArrowLeft','ArrowUp'].includes(e.key))        { e.preventDefault(); show(cur - 1); }
+    if (e.key === 'f' || e.key === 'F') {
+      if (!document.fullscreenElement) document.documentElement.requestFullscreen();
+      else document.exitFullscreen();
+    }
+  });
+
+  let tx = 0;
+  document.addEventListener('touchstart', e => { tx = e.touches[0].clientX; });
+  document.addEventListener('touchend',   e => {
+    const dx = e.changedTouches[0].clientX - tx;
+    if (dx < -40) show(cur + 1);
+    if (dx >  40) show(cur - 1);
+  });
+
+  show(0);
+</script>
+</body>
+</html>
