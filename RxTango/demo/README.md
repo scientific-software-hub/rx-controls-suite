@@ -56,12 +56,20 @@ Then run the live demos:
 ```bash
 jbang ring-scenario@. nominal
 jbang ring-dashboard@.
+```
+```bash
 jbang ring-scenario@. orbit_drift
 jbang ring-correlation@.
+```
+```bash
 jbang ring-scenario@. nominal
 jbang ring-smoothing@.
+```
+```bash
 jbang ring-scenario@. beam_loss
 jbang ring-interlocks@.
+```
+```bash
 jbang ring-scenario@. nominal
 jbang ring-backpressure@.
 ```
