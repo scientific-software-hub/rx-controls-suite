@@ -21,10 +21,6 @@ Demo A (runs once):
 Demo B (runs until Ctrl+C):
     Continuous pipeline — poll at <interval-ms>, normalize, write result.
 
-The thin read_tango_attr() / poll_tango_attr() helpers below follow the
-exact same rx.create pattern as rxepics, and anticipate the future
-RxTango/python sub-project.
-
 Usage
 -----
     python examples/tango_epics_normalize.py [tango-device] [interval-ms]
@@ -34,7 +30,7 @@ Usage
 
 Prerequisites
 -------------
-    pip install pytango caproto[asyncio] reactivex
+    uv pip install -e RxTango/python -e RxEpics/python
     docker compose -f RxTango/java/docker-compose.yml up -d   # Tango stack
     docker compose -f RxEpics/python/docker-compose.yml up -d # EPICS soft IOC
 """
@@ -44,11 +40,10 @@ import sys
 from datetime import timedelta
 from pathlib import Path
 
-# ── add rxepics to path ───────────────────────────────────────────────────────
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT / "RxEpics" / "python" / "src"))
+sys.path.insert(0, str(ROOT / "RxTango" / "python" / "src"))
 
-import tango                                      # PyTango
 import reactivex as rx
 import reactivex.operators as ops
 from reactivex.scheduler.eventloop import AsyncIOScheduler
@@ -56,50 +51,13 @@ from caproto.asyncio.client import Context
 
 from rxepics.channel import read_pv
 from rxepics.channel_write import write_pv
-
-# ── thin Tango reactive wrappers ──────────────────────────────────────────────
-# These mirror the rxepics API exactly: same rx.create pattern, same signature
-# shape.  They will move to RxTango/python once that sub-project is created.
-
-_proxy_cache: dict[str, tango.DeviceProxy] = {}
+from rxtango import read_attribute  # formerly the inline read_tango_attr helper
 
 
-def _get_proxy(device: str) -> tango.DeviceProxy:
-    if device not in _proxy_cache:
-        _proxy_cache[device] = tango.DeviceProxy(device)
-    return _proxy_cache[device]
-
-
-def read_tango_attr(device: str, attribute: str) -> rx.Observable:
-    """Single-shot Tango attribute read — mirrors rxepics.read_pv."""
-
-    def subscribe(observer, scheduler=None):
-        async def _read():
-            try:
-                loop = asyncio.get_running_loop()
-                proxy = await loop.run_in_executor(None, _get_proxy, device)
-                result = await loop.run_in_executor(None, proxy.read_attribute, attribute)
-                observer.on_next(float(result.value))
-                observer.on_completed()
-            except Exception as exc:
-                observer.on_error(exc)
-
-        asyncio.ensure_future(_read())
-
-    return rx.create(subscribe)
-
-
-def poll_tango_attr(
-    device: str,
-    attribute: str,
-    interval_ms: int,
-    scheduler,
-) -> rx.Observable:
-    """Interval-polled Tango attribute — mirrors the RxJTango pattern:
-    Flowable.interval(...).flatMapSingle(read_attr).
-    """
+def poll_tango_attr(device: str, attribute: str, interval_ms: int, scheduler) -> rx.Observable:
+    """Interval-polled Tango attribute via rxtango.read_attribute."""
     return rx.interval(timedelta(milliseconds=interval_ms), scheduler=scheduler).pipe(
-        ops.flat_map(lambda _: read_tango_attr(device, attribute))
+        ops.flat_map(lambda _: read_attribute(device, attribute))
     )
 
 
@@ -123,7 +81,7 @@ async def demo_a_snapshot(device: str, ctx: Context, scheduler) -> None:
     done = asyncio.Event()
 
     rx.zip(
-        read_tango_attr(device, TANGO_ATTR),
+        read_attribute(device, TANGO_ATTR),
         read_pv(EPICS_READ, ctx),
     ).subscribe(
         on_next=lambda pair: print(
@@ -167,7 +125,7 @@ async def demo_b_pipeline(
         # Step 1+2: read both systems in parallel on every tick
         ops.flat_map(
             lambda _: rx.zip(
-                read_tango_attr(device, TANGO_ATTR),
+                read_attribute(device, TANGO_ATTR),
                 read_pv(EPICS_READ, ctx),
             )
         ),

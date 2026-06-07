@@ -12,11 +12,12 @@ A monorepo suite of reactive programming wrappers for scientific control system 
 rx-controls-suite/
   RxTango/
     java/       ← migrated from RxJTango (jbang, RxJava3, ezTangoAPI)
+    python/     ← new (uv, RxPY v4, PyTango; unit-tested with mocked DeviceProxy)
   RxEpics/
     python/     ← migrated from RxEpics (uv/pip, RxPY v4, caproto[asyncio])
   RxTine/
     java/       ← new (jbang, RxJava3, TINE Java API)
-  (RxTango/python, RxEpics/java, RxTine/python — future)
+  (RxEpics/java, RxTine/python — future)
 ```
 
 ## Sub-project summaries

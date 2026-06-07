@@ -7,7 +7,7 @@ Reactive Programming Suite for Scientific Control Systems — the same
 poll → zip → sliding-average → backpressure → fluent pipeline
 ```
 
-Works the same way whether you're talking to **Tango Controls** (Java) or **EPICS** (Python).
+Works the same way whether you're talking to **Tango Controls** (Java or Python) or **EPICS** (Python).
 
 ---
 
@@ -16,6 +16,7 @@ Works the same way whether you're talking to **Tango Controls** (Java) or **EPIC
 | Sub-project | Platform | Language | Stack |
 |---|---|---|---|
 | [RxTango/java](RxTango/java/) | Tango Controls | Java 11+ | jbang + RxJava3 + ezTangoAPI |
+| [RxTango/python](RxTango/python/) | Tango Controls | Python 3.10+ | uv + RxPY v4 + PyTango |
 | [RxEpics/python](RxEpics/python/) | EPICS Channel Access | Python 3.10+ | uv + RxPY v4 + caproto |
 | [RxTine/java](RxTine/java/) | TINE (DESY) | Java 11+ | jbang + RxJava3 + TINE Java API |
 
@@ -36,6 +37,26 @@ jbang examples/PollAttribute.java tango://localhost:10000/sys/tg_test/1 double_s
 # or via catalog aliases
 jbang stats@.     tango://localhost:10000/sys/tg_test/1
 jbang pipeline@.  tango://localhost:10000/sys/tg_test/1
+```
+
+---
+
+## RxTango/python — quick start
+
+Prerequisites: Python 3.10+, [uv](https://docs.astral.sh/uv/), Docker.
+
+```shell
+cd RxTango/python
+uv venv && uv pip install -e .
+docker compose up -d          # start Tango stack (MariaDB + DatabaseDS + TangoTest)
+
+python examples/read_attribute.py
+python examples/poll_attribute.py tango://localhost:10000/sys/tg_test/1
+python examples/pipeline.py       tango://localhost:10000/sys/tg_test/1
+
+# run the unit tests (no live Tango needed)
+uv pip install -e ".[dev]"
+pytest -v
 ```
 
 ---

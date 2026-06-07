@@ -1,0 +1,24 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "rxtango"
+version = "0.1.0"
+description = "Reactive streams for Tango Controls"
+readme = "README.md"
+license = { text = "AGPL-3.0" }
+requires-python = ">=3.10"
+dependencies = [
+    "pytango>=9.3",
+    "reactivex>=4.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[project.urls]
+Repository = "https://github.com/scientific-software-hub/rx-controls-suite"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/rxtango"]
