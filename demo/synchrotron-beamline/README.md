@@ -44,14 +44,20 @@ docker compose ps     # wait until storage-ring-sim is healthy
 cd /path/to/rx-controls-suite
 uv pip install -e RxTango/python -e RxEpics/python
 
-# 3. (Terminal A) Monitor the ring
+# 3. Point EPICS Channel Access at the host-networked IOC (every shell)
+#    The IOC runs in network_mode: host; without this, CA search only hits
+#    the global broadcast (255.255.255.255) and PVs time out.
+export EPICS_CA_AUTO_ADDR_LIST=NO
+export EPICS_CA_ADDR_LIST=127.0.0.1
+
+# 4. (Terminal A) Monitor the ring
 cd demo/synchrotron-beamline
 python ring_health.py
 
-# 4. (Terminal B) Run the guarded scan
+# 5. (Terminal B) Run the guarded scan
 python guarded_scan.py --ascii
 
-# 5. (Terminal C) Inject faults during the scan
+# 6. (Terminal C) Inject faults during the scan
 python inject_fault.py beam_loss      # scan pauses, shutter closes
 python inject_fault.py nominal        # scan resumes, shutter opens
 python inject_fault.py orbit_drift    # quality flags appear on frames
@@ -126,4 +132,7 @@ the acquisition — one operator, explicit overload policy.
 
 Both stacks already use host networking; no port conflicts exist:
 - Tango: `localhost:10000` (DatabaseDS)
-- EPICS CA: OS-default `localhost:5064/5065`
+- EPICS CA: `localhost:5064/5065` — because the IOC is host-networked, every
+  client shell must set `EPICS_CA_AUTO_ADDR_LIST=NO` and
+  `EPICS_CA_ADDR_LIST=127.0.0.1` (see Quickstart step 3), otherwise CA search
+  falls back to the `255.255.255.255` broadcast and PVs fail to connect.

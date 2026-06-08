@@ -50,19 +50,21 @@ private:
     SimulationEngine();
 
     double elapsed_seconds_unlocked() const;
+    double scenario_elapsed_seconds_unlocked() const;
     ControllerSnapshot controller_snapshot_unlocked() const;
     SectorSnapshot sector_snapshot_unlocked(int sector_index) const;
     double base_beam_current_unlocked(double elapsed_s) const;
     double orbit_value_unlocked(int sector_index, double elapsed_s) const;
-    double vacuum_value_unlocked(int sector_index, double elapsed_s, double orbit_x_um) const;
-    double radiation_value_unlocked(double elapsed_s, double orbit_x_um, double vacuum_pressure_nbar) const;
-    double loss_value_unlocked(int sector_index, double elapsed_s, double beam_current_ma) const;
+    double vacuum_value_unlocked(int sector_index) const;
+    double radiation_value_unlocked(double vacuum_pressure_nbar) const;
+    double loss_value_unlocked(int sector_index, double beam_current_ma) const;
 
     mutable std::mutex mutex_;
     Scenario scenario_;
     double beam_current_target_ma_;
     double orbit_correction_;
     std::chrono::steady_clock::time_point started_at_;
+    std::chrono::steady_clock::time_point scenario_started_at_;
 };
 
 }  // namespace storage_ring

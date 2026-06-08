@@ -20,3 +20,7 @@ services:
     environment:
       SIM_TICK_RATE: "0.02"
       CA_TIMEOUT: "15"
+      # The IOC is host-networked; without an explicit address list, CA search
+      # only hits the 255.255.255.255 broadcast and never reaches the softIoc.
+      EPICS_CA_AUTO_ADDR_LIST: "NO"
+      EPICS_CA_ADDR_LIST: "127.0.0.1"

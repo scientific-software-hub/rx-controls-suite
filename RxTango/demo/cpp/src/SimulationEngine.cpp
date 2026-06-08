@@ -15,7 +15,8 @@ SimulationEngine::SimulationEngine()
     : scenario_(NOMINAL),
       beam_current_target_ma_(240.0),
       orbit_correction_(0.0),
-      started_at_(std::chrono::steady_clock::now()) {
+      started_at_(std::chrono::steady_clock::now()),
+      scenario_started_at_(std::chrono::steady_clock::now()) {
 }
 
 SimulationEngine &SimulationEngine::instance() {
@@ -39,9 +40,16 @@ void SimulationEngine::set_scenario(long scenario_id) {
         case NOMINAL:
         case ORBIT_DRIFT:
         case VACUUM_BURST:
-        case BEAM_LOSS:
-            scenario_ = static_cast<Scenario>(scenario_id);
+        case BEAM_LOSS: {
+            const auto requested = static_cast<Scenario>(scenario_id);
+            // Reset the scenario clock only on an actual change so repeated
+            // injection of the same scenario does not restart the ramp.
+            if (requested != scenario_) {
+                scenario_started_at_ = std::chrono::steady_clock::now();
+                scenario_ = requested;
+            }
             break;
+        }
         default:
             break;
     }
@@ -62,6 +70,11 @@ double SimulationEngine::elapsed_seconds_unlocked() const {
     return std::chrono::duration<double>(now - started_at_).count();
 }
 
+double SimulationEngine::scenario_elapsed_seconds_unlocked() const {
+    const auto now = std::chrono::steady_clock::now();
+    return std::chrono::duration<double>(now - scenario_started_at_).count();
+}
+
 SimulationEngine::ControllerSnapshot SimulationEngine::controller_snapshot_unlocked() const {
     const double elapsed_s = elapsed_seconds_unlocked();
     const double beam_current = base_beam_current_unlocked(elapsed_s);
@@ -71,7 +84,10 @@ SimulationEngine::ControllerSnapshot SimulationEngine::controller_snapshot_unloc
     for (int sector = 1; sector <= kSectorCount; ++sector) {
         const SectorSnapshot snapshot = sector_snapshot_unlocked(sector);
         total_vacuum += snapshot.vacuum_pressure_nbar;
-        if (snapshot.orbit_alarm || snapshot.vacuum_alarm || snapshot.radiation_alarm) {
+        // Orbit is a quality signal only (see facility.py::is_healthy) — it
+        // degrades frame quality but must not trip an interlock. Only vacuum
+        // and radiation alarms fan into the interlock count.
+        if (snapshot.vacuum_alarm || snapshot.radiation_alarm) {
             ++interlock_count;
         }
     }
@@ -95,9 +111,9 @@ SimulationEngine::SectorSnapshot SimulationEngine::sector_snapshot_unlocked(int 
     const double elapsed_s = elapsed_seconds_unlocked();
     const double beam_current = base_beam_current_unlocked(elapsed_s);
     const double orbit_x = orbit_value_unlocked(sector, elapsed_s);
-    const double vacuum = vacuum_value_unlocked(sector, elapsed_s, orbit_x);
-    const double radiation = radiation_value_unlocked(elapsed_s, orbit_x, vacuum);
-    const double loss = loss_value_unlocked(sector, elapsed_s, beam_current);
+    const double vacuum = vacuum_value_unlocked(sector);
+    const double radiation = radiation_value_unlocked(vacuum);
+    const double loss = loss_value_unlocked(sector, beam_current);
 
     return {
         sector,
@@ -114,25 +130,23 @@ SimulationEngine::SectorSnapshot SimulationEngine::sector_snapshot_unlocked(int 
 
 double SimulationEngine::base_beam_current_unlocked(double elapsed_s) const {
     double beam_current = beam_current_target_ma_ + 9.0 * std::sin(elapsed_s / 7.5);
+    const double st = scenario_elapsed_seconds_unlocked();
 
     switch (scenario_) {
         case NOMINAL:
-            break;
         case ORBIT_DRIFT:
-            if (elapsed_s > 8.0) {
-                beam_current -= 0.9 * (elapsed_s - 8.0);
-            }
+            // Orbit drift degrades quality only — it must not pull current
+            // below the health gate, so beam current stays nominal.
             break;
         case VACUUM_BURST:
-            if (elapsed_s > 10.0) {
-                beam_current -= 0.7 * (elapsed_s - 10.0);
-            }
+            // Gentle sag, floored well above the 50 mA gate: the abort comes
+            // from the interlock, not from the beam-loss health check.
+            beam_current = std::max(120.0, beam_current - 6.0 * st);
             break;
         case BEAM_LOSS:
-            if (elapsed_s > 8.0) {
-                beam_current -= 11.5 * (elapsed_s - 8.0);
-            }
-            beam_current = std::max(25.0, beam_current);
+            // Fast decay to a 25 mA floor → crosses the 50 mA gate in ~2.5 s
+            // and pauses the scan (no interlock).
+            beam_current = std::max(25.0, beam_current - 75.0 * st);
             break;
     }
 
@@ -145,76 +159,57 @@ double SimulationEngine::orbit_value_unlocked(int sector_index, double elapsed_s
                    + 6.0 * std::cos(elapsed_s * 0.17 + sector_index * 0.45)
                    - orbit_correction_ * 22.0;
 
-    switch (scenario_) {
-        case NOMINAL:
-            break;
-        case ORBIT_DRIFT:
-            if (elapsed_s > 6.0) {
-                orbit_x += (elapsed_s - 6.0) * 4.2;
-            }
-            break;
-        case VACUUM_BURST:
-            if (sector_index == 5 && elapsed_s > 9.0) {
-                orbit_x += 17.0;
-            }
-            break;
-        case BEAM_LOSS:
-            if (sector_index >= 6 && elapsed_s > 8.0) {
-                orbit_x += 7.0 + 2.6 * (elapsed_s - 8.0);
-            }
-            break;
+    if (scenario_ == ORBIT_DRIFT) {
+        // Ramp a bounded DC offset so |OrbitX| reliably clears the 55 µm
+        // quality threshold within a few seconds despite the ±24 µm swing.
+        // Orbit feeds quality only (decoupled from vacuum/radiation/interlock),
+        // so a large value never aborts the scan.
+        const double st = scenario_elapsed_seconds_unlocked();
+        orbit_x += std::min(95.0, 22.0 * st);
     }
 
     return orbit_x;
 }
 
-double SimulationEngine::vacuum_value_unlocked(int sector_index,
-                                                double elapsed_s,
-                                                double orbit_x_um) const {
-    double vacuum = 0.42 + std::abs(orbit_x_um) / 115.0 + 0.025 * sector_index;
+double SimulationEngine::vacuum_value_unlocked(int sector_index) const {
+    // Nominal vacuum is well below the 1.55 nbar alarm. Only a vacuum burst,
+    // localized to sector 5, drives it over the alarm threshold. Orbit no
+    // longer feeds vacuum — the scenarios are kept independent.
+    double vacuum = 0.42 + 0.025 * sector_index;
 
-    switch (scenario_) {
-        case NOMINAL:
-        case ORBIT_DRIFT:
-            break;
-        case VACUUM_BURST:
-            if (sector_index == 5 && elapsed_s > 9.0) {
-                vacuum += 0.95 + 0.11 * (elapsed_s - 9.0);
-            }
-            break;
-        case BEAM_LOSS:
-            if (sector_index >= 6 && elapsed_s > 8.0) {
-                vacuum += 0.08 * (elapsed_s - 8.0);
-            }
-            break;
+    if (scenario_ == VACUUM_BURST && sector_index == 5) {
+        const double st = scenario_elapsed_seconds_unlocked();
+        vacuum += std::min(1.6, 0.55 + 0.25 * st);   // clears 1.55 in ~1.8 s
     }
 
     return vacuum;
 }
 
-double SimulationEngine::radiation_value_unlocked(double elapsed_s,
-                                                  double orbit_x_um,
-                                                  double vacuum_pressure_nbar) const {
-    double radiation = 0.03 + std::max(0.0, std::abs(orbit_x_um) - 28.0) / 40.0;
-    radiation += std::max(0.0, vacuum_pressure_nbar - 0.85) * 0.58;
+double SimulationEngine::radiation_value_unlocked(double vacuum_pressure_nbar) const {
+    // Radiation tracks vacuum and, during a vacuum burst, an extra dose term.
+    // It is independent of orbit so orbit drift cannot trip the radiation alarm.
+    double radiation = 0.03 + std::max(0.0, vacuum_pressure_nbar - 0.85) * 0.58;
 
-    if (scenario_ == VACUUM_BURST && elapsed_s > 10.0) {
-        radiation += 0.16 + 0.03 * (elapsed_s - 10.0);
-    }
-    if (scenario_ == BEAM_LOSS && elapsed_s > 8.0) {
-        radiation += 0.45 + 0.12 * (elapsed_s - 8.0);
+    if (scenario_ == VACUUM_BURST) {
+        const double st = scenario_elapsed_seconds_unlocked();
+        radiation += std::min(0.9, 0.25 + 0.12 * st);
     }
 
     return radiation;
 }
 
 double SimulationEngine::loss_value_unlocked(int sector_index,
-                                             double elapsed_s,
                                              double beam_current_ma) const {
-    if (scenario_ != BEAM_LOSS || elapsed_s <= 8.0 || sector_index < 6) {
-        return std::max(0.0, (250.0 - beam_current_ma) / 900.0);
+    // Pure diagnostic readout (not part of any alarm). Tracks the current
+    // deficit, with an extra localized term during a beam-loss event.
+    double loss = std::max(0.0, (250.0 - beam_current_ma) / 900.0);
+
+    if (scenario_ == BEAM_LOSS && sector_index >= 6) {
+        const double st = scenario_elapsed_seconds_unlocked();
+        loss = std::min(0.98, loss + 0.10 * st + 0.03 * (sector_index - 6));
     }
-    return std::min(0.98, 0.18 + 0.10 * (elapsed_s - 8.0) + 0.03 * (sector_index - 6));
+
+    return loss;
 }
 
 }  // namespace storage_ring
