@@ -1,0 +1,718 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Synchrotron Beamline — Live Dashboard</title>
+<style>
+/* ─── reset / base ─────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:       #090d1a;
+  --panel:    #0f1629;
+  --card:     #141d35;
+  --border:   #1e2d4f;
+  --text:     #e2e8f0;
+  --muted:    #64748b;
+  --cyan:     #00d4ff;
+  --green:    #10b981;
+  --amber:    #f59e0b;
+  --red:      #ef4444;
+  --font:     'Segoe UI', system-ui, sans-serif;
+}
+
+html, body {
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 14px;
+}
+
+/* ─── header ───────────────────────────────────────────────────────────────── */
+header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 0 20px;
+  height: 52px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  position: sticky; top: 0; z-index: 10;
+}
+
+header h1 {
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: .02em;
+  color: var(--cyan);
+  white-space: nowrap;
+}
+
+#status-chip {
+  padding: 3px 12px;
+  border-radius: 99px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  background: #0e1a0e;
+  color: var(--green);
+  border: 1px solid var(--green);
+  transition: background .4s, color .4s, border-color .4s;
+}
+#status-chip.beam-low  { background:#221500; color:var(--amber); border-color:var(--amber); }
+#status-chip.interlock { background:#1a0505; color:var(--red);   border-color:var(--red);   animation:flash 1s ease-in-out infinite; }
+#status-chip.connecting{ background:#111; color:var(--muted); border-color:var(--muted); }
+
+@keyframes flash { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+#reconnect-badge {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--amber);
+  display: none;
+}
+#reconnect-badge.visible { display: block; }
+
+#tick { margin-left: auto; font-size: 11px; color: var(--muted); }
+#scenario-label { font-size: 12px; color: var(--muted); font-style: italic; }
+
+/* ─── main layout ──────────────────────────────────────────────────────────── */
+main {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  padding: 16px;
+  height: calc(100vh - 52px);
+}
+
+section {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  padding: 14px 16px 10px;
+  overflow: hidden;
+  min-height: 0;
+}
+
+section h2 {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  margin-bottom: 8px;
+  flex-shrink: 0;
+}
+section h2 .tech { font-weight: 400; font-style: italic; }
+
+/* ─── ring SVG ─────────────────────────────────────────────────────────────── */
+#ring-svg {
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.sector {
+  transition: fill .5s ease, stroke .5s ease, filter .5s ease;
+  cursor: default;
+}
+.sector.s-ok      { fill: #0d2e1c; stroke: #10b981; stroke-width: 1.5; }
+.sector.s-orbit   { fill: #2d1a00; stroke: #f59e0b; stroke-width: 1.5; }
+.sector.s-alarm   {
+  fill: #300a0a; stroke: #ef4444; stroke-width: 2;
+  filter: url(#red-glow);
+  animation: sector-pulse 1.2s ease-in-out infinite;
+}
+@keyframes sector-pulse { 0%,100%{opacity:1} 50%{opacity:.7} }
+
+/* sector number labels */
+.sec-label { font-size: 11px; fill: #4a6080; font-family: var(--font); pointer-events:none; }
+
+/* beam dot orbit */
+#beam-orbit-g circle {
+  transition: opacity .8s ease;
+}
+
+/* ─── ring center text ─────────────────────────────────────────────────────── */
+.ring-readout { dominant-baseline: middle; text-anchor: middle; font-family: var(--font); pointer-events:none; }
+#r-current  { font-size: 26px; font-weight: 700; fill: var(--cyan); }
+#r-unit     { font-size: 11px; fill: var(--muted); }
+#r-lifetime { font-size: 14px; fill: var(--text); }
+#r-scenario { font-size: 13px; fill: var(--amber); font-style:italic; }
+#r-interlocks { font-size: 13px; fill: var(--text); }
+#r-interlock-badge {
+  transition: fill .4s, opacity .4s;
+}
+#r-il-circle { transition: fill .4s; }
+
+/* ─── beamline SVG ─────────────────────────────────────────────────────────── */
+#beamline-svg {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  overflow: visible;
+}
+
+.beam-seg {
+  stroke-width: 3;
+  transition: stroke .4s, opacity .4s;
+}
+.beam-open   { stroke: var(--cyan); opacity: 1; }
+.beam-closed { stroke: #334155;     opacity: .5; }
+
+#shutter-body {
+  transition: fill .3s, stroke .3s;
+}
+.shutter-open   { fill: #0d2e1c; stroke: var(--green); }
+.shutter-closed { fill: #300a0a; stroke: var(--red); }
+
+#sample-stage {
+  transition: transform .8s ease;
+}
+
+#sample-rect {
+  transition: fill .4s;
+}
+
+#det-body {
+  transition: fill .4s, stroke .4s;
+}
+.det-acquiring { fill: #0a1f33; stroke: var(--cyan); filter: url(#cyan-glow); }
+.det-idle      { fill: #0f1629; stroke: #334155; }
+
+/* ─── scan status bar ──────────────────────────────────────────────────────── */
+#scan-bar {
+  flex-shrink: 0;
+  margin-top: 8px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 12px;
+  display: grid;
+  grid-template-columns: 90px 1fr auto auto auto;
+  align-items: center;
+  gap: 10px;
+}
+
+#scan-status-text {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  transition: color .4s;
+}
+.scan-idle     { color: var(--muted); }
+.scan-running  { color: var(--cyan); }
+.scan-done     { color: var(--green); }
+.scan-aborted  { color: var(--red); }
+
+#scan-progress-track {
+  background: var(--border);
+  height: 6px;
+  border-radius: 3px;
+  overflow: hidden;
+}
+#scan-progress-fill {
+  height: 100%;
+  border-radius: 3px;
+  background: var(--cyan);
+  width: 0%;
+  transition: width .8s ease, background .4s;
+}
+
+#scan-angle-text, #scan-proj-text, #scan-counts-text {
+  font-size: 12px;
+  white-space: nowrap;
+  color: var(--muted);
+}
+#scan-angle-text span, #scan-proj-text span, #scan-counts-text span {
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* ─── ring current gauge (thin arc below ring) ─────────────────────────────── */
+#current-gauge-arc {
+  transition: stroke-dashoffset .8s ease, stroke .5s;
+}
+
+/* ─── SVG labels/units in beamline ─────────────────────────────────────────── */
+.bl-label { font-size: 10px; fill: var(--muted); text-anchor: middle; font-family: var(--font); }
+.bl-value { font-size: 12px; fill: var(--text);  text-anchor: middle; font-family: var(--font); font-weight:600; }
+
+/* ─── crosshair on detector ────────────────────────────────────────────────── */
+#det-crosshair-h, #det-crosshair-v {
+  stroke: var(--cyan); stroke-width: 1; opacity:.7;
+  transition: cx .5s ease, cy .5s ease, x1 .5s, x2 .5s, y1 .5s, y2 .5s;
+}
+
+/* shutter label */
+#shutter-icon { transition: fill .3s; }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════ HEADER ══════════════════════════════ -->
+<header>
+  <h1>⚛ Synchrotron Beamline</h1>
+  <div id="status-chip" class="connecting">CONNECTING</div>
+  <span id="scenario-label"></span>
+  <div id="reconnect-badge">⚠ reconnecting…</div>
+  <div id="tick">t=—</div>
+</header>
+
+<!-- ═══════════════════════════════════ MAIN ════════════════════════════════ -->
+<main>
+
+  <!-- ─── LEFT: Storage Ring ─────────────────────────────────────────────── -->
+  <section>
+    <h2>Storage Ring <span class="tech">(Tango Controls)</span></h2>
+    <svg id="ring-svg" viewBox="0 0 500 500" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <filter id="cyan-glow" x="-40%" y="-40%" width="180%" height="180%">
+          <feGaussianBlur in="SourceGraphic" stdDeviation="5" result="b"/>
+          <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+        <filter id="red-glow" x="-40%" y="-40%" width="180%" height="180%">
+          <feGaussianBlur in="SourceGraphic" stdDeviation="6" result="b"/>
+          <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+        <!-- beam dot glow -->
+        <radialGradient id="dot-grad" cx="50%" cy="50%" r="50%">
+          <stop offset="0%"   stop-color="#00d4ff" stop-opacity="1"/>
+          <stop offset="100%" stop-color="#0080ff" stop-opacity=".6"/>
+        </radialGradient>
+      </defs>
+
+      <!-- sectors (populated by initRing() in JS) -->
+      <g id="ring-sectors"></g>
+
+      <!-- beam current gauge arc (thin ring outside the sectors) -->
+      <!-- circumference of r=210: 2π×210 ≈ 1319.5 -->
+      <circle id="current-gauge-bg"
+        cx="250" cy="250" r="210" fill="none"
+        stroke="#1e2d4f" stroke-width="6"/>
+      <circle id="current-gauge-arc"
+        cx="250" cy="250" r="210" fill="none"
+        stroke="#10b981" stroke-width="6"
+        stroke-linecap="round"
+        stroke-dasharray="1319.5"
+        stroke-dashoffset="1319.5"
+        transform="rotate(-90 250 250)"/>
+
+      <!-- 50 mA health-gate tick mark (at the correct fraction of 320 max) -->
+      <!-- 50/320 * 1319.5 ≈ 206  so dashoffset for full ring minus this -->
+
+      <!-- sector number labels (populated by initRing()) -->
+      <g id="ring-labels"></g>
+
+      <!-- orbiting beam dot (continuous SMIL rotation around ring center) -->
+      <g id="beam-orbit-g" filter="url(#cyan-glow)">
+        <animateTransform attributeName="transform" type="rotate"
+          from="0 250 250" to="360 250 250" dur="5s" repeatCount="indefinite"/>
+        <circle id="beam-dot" cx="250" cy="93" r="9"
+          fill="url(#dot-grad)" opacity="1"/>
+      </g>
+
+      <!-- center readouts (inner hole r≈110 → fits within ~220px diam) -->
+      <!-- current value -->
+      <text id="r-current" class="ring-readout" x="250" y="214">—</text>
+      <text id="r-unit"    class="ring-readout" x="250" y="235">mA</text>
+      <!-- lifetime -->
+      <text id="r-lifetime" class="ring-readout" x="250" y="258">— h  lifetime</text>
+      <!-- scenario -->
+      <text id="r-scenario" class="ring-readout" x="250" y="279">—</text>
+      <!-- interlock badge (circle + number) -->
+      <circle id="r-il-circle" cx="250" cy="305" r="18" fill="#1e2d4f" stroke="#334155" stroke-width="1.5"/>
+      <text id="r-interlocks" class="ring-readout" x="250" y="306" style="font-size:15px;font-weight:700;fill:#64748b">0</text>
+      <text class="ring-readout" x="250" y="328" style="font-size:10px;fill:#475569">interlocks</text>
+    </svg>
+  </section>
+
+  <!-- ─── RIGHT: Tomography Beamline ─────────────────────────────────────── -->
+  <section>
+    <h2>Tomography Beamline <span class="tech">(EPICS)</span></h2>
+
+    <!-- beamline schematic SVG  viewBox: 0 0 620 320 -->
+    <svg id="beamline-svg" viewBox="0 0 620 340" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <!-- re-use cyan-glow defined in ring SVG — NOT available cross-SVG.
+             Define it here too. -->
+        <filter id="bl-glow" x="-40%" y="-40%" width="180%" height="180%">
+          <feGaussianBlur in="SourceGraphic" stdDeviation="4" result="b"/>
+          <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+        <!-- sample stage gradient -->
+        <radialGradient id="stage-grad" cx="50%" cy="50%" r="50%">
+          <stop offset="0%"   stop-color="#1e3050"/>
+          <stop offset="100%" stop-color="#0d1829"/>
+        </radialGradient>
+      </defs>
+
+      <!-- ── beam axis y = 160 ────────────────────────────────────────────── -->
+
+      <!-- beam segments (3 sections: source→shutter, shutter→sample, sample→det) -->
+      <line id="beam-seg1" class="beam-seg beam-open"
+        x1="62" y1="160" x2="162" y2="160" filter="url(#bl-glow)"/>
+      <line id="beam-seg2" class="beam-seg beam-open"
+        x1="192" y1="160" x2="288" y2="160" filter="url(#bl-glow)"/>
+      <line id="beam-seg3" class="beam-seg beam-open"
+        x1="388" y1="160" x2="528" y2="160" filter="url(#bl-glow)"/>
+
+      <!-- ── Source ────────────────────────────────────────────────────────── -->
+      <!-- bending magnet / wiggler symbol -->
+      <ellipse cx="40" cy="160" rx="20" ry="28" fill="#0a1829" stroke="#334155" stroke-width="1.5"/>
+      <ellipse cx="40" cy="160" rx="10" ry="15" fill="#0f2040" stroke="#00d4ff" stroke-width="1.5" filter="url(#bl-glow)"/>
+      <text class="bl-label" x="40"  y="202">Source</text>
+
+      <!-- ── Shutter ──────────────────────────────────────────────────────── -->
+      <!-- gate represented as two interlocking rectangles (beam stopper) -->
+      <g id="shutter-g">
+        <!-- top blade -->
+        <rect id="shutter-top"    x="162" y="127" width="30" height="28"
+          rx="2" fill="#0d2e1c" stroke="#10b981" stroke-width="1.5"
+          class="shutter-open"/>
+        <!-- bottom blade -->
+        <rect id="shutter-bottom" x="162" y="161" width="30" height="28"
+          rx="2" fill="#0d2e1c" stroke="#10b981" stroke-width="1.5"
+          class="shutter-open"/>
+        <!-- gap in the middle when open (the beam passes through) -->
+        <text class="bl-label" x="177" y="208">Shutter</text>
+        <!-- open/closed indicator dot -->
+        <circle id="shutter-icon" cx="177" cy="218" r="4" fill="#10b981"/>
+        <text id="shutter-text" class="bl-label" x="177" y="230"
+          style="fill:#10b981">OPEN</text>
+      </g>
+
+      <!-- ── Sample on rotation stage ────────────────────────────────────── -->
+      <g id="sample-stage"
+        style="transform-origin: 338px 160px; transition: transform 0.8s ease;">
+        <!-- stage circle -->
+        <circle cx="338" cy="160" r="50"
+          fill="url(#stage-grad)" stroke="#1e3a5f" stroke-width="1.5"/>
+        <circle cx="338" cy="160" r="50"
+          fill="none" stroke="#2a4a7f" stroke-width="0.5" stroke-dasharray="4 4"/>
+        <!-- sample object (rectangle = tomography sample cylinder cross-section) -->
+        <rect id="sample-rect" x="323" y="135" width="30" height="50"
+          rx="4" fill="#1e3a6e" stroke="#00d4ff" stroke-width="1.5"/>
+        <!-- rotation tick marks on stage edge -->
+        <line x1="338" y1="110" x2="338" y2="118" stroke="#2a4a7f" stroke-width="1.5"/>
+        <line x1="338" y1="202" x2="338" y2="210" stroke="#2a4a7f" stroke-width="1.5"/>
+        <line x1="288" y1="160" x2="296" y2="160" stroke="#2a4a7f" stroke-width="1.5"/>
+        <line x1="380" y1="160" x2="388" y2="160" stroke="#2a4a7f" stroke-width="1.5"/>
+      </g>
+      <!-- rotation angle text (outside the rotating group) -->
+      <text id="sample-angle-text" class="bl-value" x="338" y="280">0.0°</text>
+      <text class="bl-label" x="338" y="295">rotation angle</text>
+
+      <!-- ── Detector ─────────────────────────────────────────────────────── -->
+      <g id="detector-g">
+        <!-- detector body -->
+        <rect id="det-body" x="528" y="110" width="40" height="100"
+          rx="4" fill="#0f1629" stroke="#334155" stroke-width="1.5"
+          class="det-idle"/>
+        <!-- pixel pattern (decorative) -->
+        <line x1="536" y1="125" x2="560" y2="125" stroke="#1e3050" stroke-width="1"/>
+        <line x1="536" y1="135" x2="560" y2="135" stroke="#1e3050" stroke-width="1"/>
+        <line x1="536" y1="145" x2="560" y2="145" stroke="#1e3050" stroke-width="1"/>
+        <line x1="536" y1="155" x2="560" y2="155" stroke="#1e3050" stroke-width="1"/>
+        <line x1="536" y1="165" x2="560" y2="165" stroke="#1e3050" stroke-width="1"/>
+        <line x1="536" y1="175" x2="560" y2="175" stroke="#1e3050" stroke-width="1"/>
+        <line x1="536" y1="185" x2="560" y2="185" stroke="#1e3050" stroke-width="1"/>
+        <line x1="548" y1="112" x2="548" y2="208" stroke="#1e3050" stroke-width="1"/>
+        <!-- beam hit crosshair (position driven by beam_x/beam_y) -->
+        <line id="det-ch-h" x1="528" y1="160" x2="568" y2="160"
+          stroke="#00d4ff" stroke-width="1.5" opacity=".6"/>
+        <line id="det-ch-v" x1="548" y1="110" x2="548" y2="210"
+          stroke="#00d4ff" stroke-width="1.5" opacity=".6"/>
+        <!-- counts display -->
+        <text id="det-counts" class="bl-value" x="548" y="230">0</text>
+        <text class="bl-label" x="548" y="243">counts</text>
+        <text class="bl-label" x="548" y="253">Detector</text>
+      </g>
+
+      <!-- ── acquiring flash ring around detector ─────────────────────────── -->
+      <rect id="det-acq-ring" x="521" y="103" width="54" height="114"
+        rx="6" fill="none" stroke="transparent" stroke-width="2.5" opacity="0"/>
+
+    </svg>
+
+    <!-- ─── Scan Status Bar ─────────────────────────────────────────────── -->
+    <div id="scan-bar">
+      <span id="scan-status-text" class="scan-idle">IDLE</span>
+      <div id="scan-progress-track">
+        <div id="scan-progress-fill"></div>
+      </div>
+      <span id="scan-angle-text"><span id="sv-angle">0.0</span>°</span>
+      <span id="scan-proj-text">frame <span id="sv-proj">0</span></span>
+      <span id="scan-counts-text">cts <span id="sv-counts">0</span></span>
+    </div>
+  </section>
+
+</main>
+
+<!-- ═══════════════════════════════════ SCRIPT ══════════════════════════════ -->
+<script>
+"use strict";
+
+// ── constants (mirrored from facility.py) ─────────────────────────────────
+const SCAN_NAMES = { 0:"idle", 1:"running", 2:"done", 3:"aborted" };
+const SCAN_MAX_ANGLE = 180.0;   // guarded_scan.py default: 36 projs over 180°
+
+// ── ring geometry ─────────────────────────────────────────────────────────
+const CX = 250, CY = 250, R_OUT = 195, R_IN = 118, R_MID = 157;
+const GAP_DEG = 1.8;   // gap between adjacent sectors (degrees each side)
+
+function polarXY(cx, cy, r, angleDeg) {
+  const rad = angleDeg * Math.PI / 180;
+  return [cx + r * Math.cos(rad), cy + r * Math.sin(rad)];
+}
+
+function sectorPath(cx, cy, rOut, rIn, startDeg, endDeg) {
+  const [x1o, y1o] = polarXY(cx, cy, rOut, startDeg);
+  const [x2o, y2o] = polarXY(cx, cy, rOut, endDeg);
+  const [x2i, y2i] = polarXY(cx, cy, rIn,  endDeg);
+  const [x1i, y1i] = polarXY(cx, cy, rIn,  startDeg);
+  const large = (endDeg - startDeg) > 180 ? 1 : 0;
+  return [
+    `M${x1o.toFixed(2)},${y1o.toFixed(2)}`,
+    `A${rOut},${rOut},0,${large},1,${x2o.toFixed(2)},${y2o.toFixed(2)}`,
+    `L${x2i.toFixed(2)},${y2i.toFixed(2)}`,
+    `A${rIn},${rIn},0,${large},0,${x1i.toFixed(2)},${y1i.toFixed(2)}`,
+    `Z`
+  ].join(' ');
+}
+
+function initRing() {
+  const svgNS = "http://www.w3.org/2000/svg";
+  const sectorsG = document.getElementById('ring-sectors');
+  const labelsG  = document.getElementById('ring-labels');
+  for (let i = 0; i < 8; i++) {
+    const startDeg = -90 + i * 45 + GAP_DEG;
+    const endDeg   = -90 + (i + 1) * 45 - GAP_DEG;
+    const midDeg   = -90 + (i + 0.5) * 45;
+
+    // sector path
+    const path = document.createElementNS(svgNS, 'path');
+    path.id = `sector-${i + 1}`;
+    path.setAttribute('d', sectorPath(CX, CY, R_OUT, R_IN, startDeg, endDeg));
+    path.classList.add('sector', 's-ok');
+    sectorsG.appendChild(path);
+
+    // sector number label (on midpoint at R_MID)
+    const [lx, ly] = polarXY(CX, CY, R_MID, midDeg);
+    const txt = document.createElementNS(svgNS, 'text');
+    txt.setAttribute('x', lx.toFixed(1));
+    txt.setAttribute('y', ly.toFixed(1));
+    txt.setAttribute('dominant-baseline', 'middle');
+    txt.setAttribute('text-anchor', 'middle');
+    txt.classList.add('sec-label');
+    txt.textContent = i + 1;
+    labelsG.appendChild(txt);
+  }
+}
+
+// ── current gauge arc ─────────────────────────────────────────────────────
+// circumference ≈ 2π × 210 ≈ 1319.5  (ring r=210 for gauge arc)
+const GAUGE_C  = 2 * Math.PI * 210;
+const BEAM_MAX = 320;
+
+function updateGauge(current) {
+  const frac   = Math.min(1, Math.max(0, current / BEAM_MAX));
+  const offset = GAUGE_C * (1 - frac);
+  const arc    = document.getElementById('current-gauge-arc');
+  arc.style.strokeDashoffset = offset.toFixed(1);
+  // color: red below 50 mA, amber 50–100, green above
+  arc.style.stroke = current < 50 ? '#ef4444' : current < 100 ? '#f59e0b' : '#10b981';
+}
+
+// ── sector coloring ───────────────────────────────────────────────────────
+function updateSectors(sectors) {
+  sectors.forEach((sec, i) => {
+    const el = document.getElementById(`sector-${i + 1}`);
+    if (!el) return;
+    el.classList.remove('s-ok', 's-orbit', 's-alarm');
+    if (sec.vacuum_alarm || sec.radiation_alarm) {
+      el.classList.add('s-alarm');
+    } else if (sec.orbit_alarm) {
+      el.classList.add('s-orbit');
+    } else {
+      el.classList.add('s-ok');
+    }
+  });
+}
+
+// ── ring center readouts ──────────────────────────────────────────────────
+function updateRing(ring) {
+  document.getElementById('r-current').textContent  = ring.current.toFixed(1);
+  document.getElementById('r-lifetime').textContent = `${ring.lifetime.toFixed(1)} h  lifetime`;
+  document.getElementById('r-scenario').textContent = ring.scenario.replace('_', ' ');
+
+  const il = ring.interlocks;
+  const ilEl  = document.getElementById('r-interlocks');
+  const ilCir = document.getElementById('r-il-circle');
+  ilEl.textContent = il;
+  if (il > 0) {
+    ilEl.style.fill  = '#ef4444';
+    ilCir.setAttribute('fill',   '#3d0505');
+    ilCir.setAttribute('stroke', '#ef4444');
+  } else {
+    ilEl.style.fill  = '#64748b';
+    ilCir.setAttribute('fill',   '#1e2d4f');
+    ilCir.setAttribute('stroke', '#334155');
+  }
+
+  // beam dot brightness
+  const dotOpacity = Math.max(0.1, Math.min(1, ring.current / 250)).toFixed(2);
+  document.getElementById('beam-dot').setAttribute('opacity', dotOpacity);
+
+  updateGauge(ring.current);
+}
+
+// ── header status chip ────────────────────────────────────────────────────
+function updateHeader(s) {
+  const chip = document.getElementById('status-chip');
+  const sc   = document.getElementById('scenario-label');
+  chip.className = s.ring.status;  // CSS class drives color
+  const labels = { healthy:'HEALTHY', 'beam-low':'BEAM LOW',
+                   interlock:'INTERLOCK', connecting:'CONNECTING' };
+  chip.textContent = labels[s.ring.status] || s.ring.status.toUpperCase();
+
+  sc.textContent = `scenario: ${s.ring.scenario.replace(/_/g,' ')}`;
+
+  document.getElementById('reconnect-badge').classList.toggle('visible', s.stale);
+  document.getElementById('tick').textContent = `t=${s.t}`;
+}
+
+// ── beamline ──────────────────────────────────────────────────────────────
+function updateBeamline(bl) {
+  const open = bl.shutter;
+
+  // beam segments
+  ['beam-seg1','beam-seg2','beam-seg3'].forEach(id => {
+    const el = document.getElementById(id);
+    el.classList.toggle('beam-open',   open);
+    el.classList.toggle('beam-closed', !open);
+  });
+
+  // shutter
+  ['shutter-top','shutter-bottom'].forEach(id => {
+    const el = document.getElementById(id);
+    el.classList.toggle('shutter-open',   open);
+    el.classList.toggle('shutter-closed', !open);
+    // animate gap: close by overlapping the two blades
+    if (id === 'shutter-top') {
+      el.setAttribute('y', open ? '127' : '135');
+    } else {
+      el.setAttribute('y', open ? '161' : '152');
+    }
+  });
+  document.getElementById('shutter-icon').setAttribute('fill',
+    open ? '#10b981' : '#ef4444');
+  const shutterTxt = document.getElementById('shutter-text');
+  shutterTxt.textContent = open ? 'OPEN' : 'CLOSED';
+  shutterTxt.style.fill  = open ? '#10b981' : '#ef4444';
+
+  // sample rotation (CSS transition does the smooth spin)
+  document.getElementById('sample-stage').style.transform =
+    `rotate(${bl.angle.toFixed(1)}deg)`;
+  document.getElementById('sample-angle-text').textContent =
+    `${bl.angle.toFixed(1)}°`;
+
+  // sample pulse on acquiring
+  document.getElementById('sample-rect').setAttribute('stroke',
+    bl.acquiring ? '#00d4ff' : '#1e5090');
+
+  // detector
+  const detBody = document.getElementById('det-body');
+  detBody.classList.toggle('det-acquiring', bl.acquiring);
+  detBody.classList.toggle('det-idle',      !bl.acquiring);
+
+  // acquiring ring flash
+  const acqRing = document.getElementById('det-acq-ring');
+  acqRing.setAttribute('stroke', bl.acquiring ? '#00d4ff' : 'transparent');
+  acqRing.setAttribute('opacity', bl.acquiring ? '0.7' : '0');
+
+  // detector counts
+  document.getElementById('det-counts').textContent =
+    bl.counts.toLocaleString();
+
+  // beam position crosshair — map ±5 mm range to 40×100px detector face
+  // detector face: x 528–568, y 110–210  → center 548, 160
+  const DX = 20, DY = 50;   // half-width/height in SVG px
+  const chX = 548 + Math.max(-DX+2, Math.min(DX-2, bl.beam_x * 3));
+  const chY = 160 + Math.max(-DY+2, Math.min(DY-2, -bl.beam_y * 5));
+  const h = document.getElementById('det-ch-h');
+  const v = document.getElementById('det-ch-v');
+  h.setAttribute('y1', chY.toFixed(1)); h.setAttribute('y2', chY.toFixed(1));
+  v.setAttribute('x1', chX.toFixed(1)); v.setAttribute('x2', chX.toFixed(1));
+}
+
+// ── scan status bar ───────────────────────────────────────────────────────
+const SCAN_STATUS_CLASS = {
+  idle:'scan-idle', running:'scan-running', done:'scan-done', aborted:'scan-aborted'
+};
+const SCAN_STATUS_LABEL = {
+  idle:'IDLE', running:'SCANNING', done:'COMPLETE', aborted:'ABORTED'
+};
+
+function updateScanBar(bl) {
+  const st  = bl.scan_status_name;
+  const txt = document.getElementById('scan-status-text');
+  txt.className = SCAN_STATUS_CLASS[st] || 'scan-idle';
+  txt.textContent = SCAN_STATUS_LABEL[st] || st.toUpperCase();
+
+  // progress based on current angle / 180
+  const pct = Math.min(100, Math.max(0,
+    (bl.cur_angle / SCAN_MAX_ANGLE) * 100)).toFixed(1);
+  const fill = document.getElementById('scan-progress-fill');
+  fill.style.width = pct + '%';
+  fill.style.background =
+    st === 'aborted' ? '#ef4444' :
+    st === 'done'    ? '#10b981' : '#00d4ff';
+
+  document.getElementById('sv-angle').textContent  = bl.cur_angle.toFixed(1);
+  document.getElementById('sv-proj').textContent   = bl.cur_proj;
+  document.getElementById('sv-counts').textContent = bl.counts.toLocaleString();
+}
+
+// ── main state applier ────────────────────────────────────────────────────
+function applyState(s) {
+  updateHeader(s);
+  updateRing(s.ring);
+  updateSectors(s.sectors);
+  updateBeamline(s.beamline);
+  updateScanBar(s.beamline);
+}
+
+// ── polling loop ──────────────────────────────────────────────────────────
+let _failCount = 0;
+
+async function fetchState() {
+  try {
+    const res = await fetch('/state', { cache: 'no-store' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const s = await res.json();
+    _failCount = 0;
+    applyState(s);
+  } catch (err) {
+    _failCount++;
+    if (_failCount >= 3) {
+      document.getElementById('reconnect-badge').classList.add('visible');
+    }
+    console.warn('fetch /state failed:', err);
+  }
+}
+
+// ── init ──────────────────────────────────────────────────────────────────
+initRing();
+fetchState();                    // immediate first fetch
+setInterval(fetchState, 1000);   // then every 1 s
+</script>
+</body>
+</html>

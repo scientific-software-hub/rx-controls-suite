@@ -72,6 +72,52 @@ python inject_fault.py vacuum_burst   # emergency abort
 | `ring_health.py` | Live ring-health stream (intro) — current, interlocks, orbit |
 | `inject_fault.py <scenario>` | Set ring scenario: `nominal \| orbit_drift \| vacuum_burst \| beam_loss` |
 | `guarded_scan.py` ★ | **Hero** — full guarded tomography scan fusing Tango + EPICS |
+| `live_dashboard.py` | **Animated web dashboard** — SVG ring + beamline, auto-refreshed at 1 Hz |
+
+## Live dashboard
+
+`live_dashboard.py` is a small FastAPI app that reuses the same reactive
+wrappers (`rxtango`, `rxepics`) to poll the storage ring and tomography beamline
+at 1 Hz, then serves the data as JSON. The browser loads a single
+`dashboard.html` page and updates the SVG scene in place — no page reloads,
+CSS transitions keep values gliding smoothly.
+
+```
+             1 Hz reactive poller (rx.interval + flat_map + rx.zip)
+               reads Tango × 36 attrs + EPICS × 10 PVs per tick
+                              ↓
+                   GET /state → JSON snapshot
+                              ↓
+              browser JS (setInterval 1s) → applyState() → SVG
+```
+
+**What you see:**
+
+- **Storage ring (left):** 8 animated donut sectors — green healthy, amber on
+  orbit drift, red + pulsing on vacuum/radiation interlock.  A cyan beam dot
+  orbits continuously; its brightness tracks `BeamCurrent`.  A gauge arc shows
+  current vs the 320 mA target; turns red below the 50 mA gate.
+- **Beamline (right):** Source → shutter (opens/closes live) → rotating sample
+  stage (smooth spin matching `ROT:VAL`) → detector (glows on acquisition, shows
+  counts and beam-position crosshair).  A scan-progress bar at the bottom tracks
+  angle and frame number.
+
+```bash
+# after docker compose up and the EPICS_CA_* exports (Quickstart step 3):
+uv run --with fastapi --with "uvicorn[standard]" python live_dashboard.py
+# open http://127.0.0.1:8000
+# DASHBOARD_HOST / DASHBOARD_PORT env vars override the bind address
+```
+
+Fault injection via `inject_fault.py` is reflected on the page within one
+second:
+
+| `inject_fault.py …` | visible effect |
+|---|---|
+| `beam_loss` | beam dot dims, gauge turns red, chip → **BEAM LOW** |
+| `orbit_drift` | affected sectors turn amber (quality, no interlock) |
+| `vacuum_burst` | sector 5 turns red + pulses, chip → **INTERLOCK** |
+| `nominal` | everything returns to green |
 
 ## Presentation
 
