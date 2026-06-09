@@ -24,6 +24,18 @@ Works the same way whether you're talking to **Tango Controls** (Java or Python)
 
 ---
 
+## Design philosophy
+
+- **One vocabulary, many platforms.** `poll`, `zip`, `sliding average`, `backpressure`,
+  `fluent pipeline` — the same patterns, regardless of the underlying control system.
+- **Spec-compliant.** RxTango publishers are verified against the
+  [reactive-streams TCK](https://github.com/reactive-streams/reactive-streams-jvm/tree/master/tck).
+- **No framework lock-in.** Production code depends only on `org.reactivestreams` (Java)
+  or `reactivex` (Python). RxJava3 / caproto are used in examples but swappable.
+- **Zero build step for examples.** jbang inline deps for Java; plain `python` for Python.
+
+---
+
 ## RxTango/java — quick start
 
 Prerequisites: [jbang](https://www.jbang.dev/), Docker, JTango artifacts in `~/.m2` (see [RxTango/java/README.md](RxTango/java/README.md)).
@@ -76,18 +88,6 @@ python examples/read_pv.py TEST:DOUBLE TEST:LONG
 python examples/monitor_pv.py TEST:CALC
 python examples/pv_pipeline.py
 ```
-
----
-
-## Design philosophy
-
-- **One vocabulary, many platforms.** `poll`, `zip`, `sliding average`, `backpressure`,
-  `fluent pipeline` — the same patterns, regardless of the underlying control system.
-- **Spec-compliant.** RxTango publishers are verified against the
-  [reactive-streams TCK](https://github.com/reactive-streams/reactive-streams-jvm/tree/master/tck).
-- **No framework lock-in.** Production code depends only on `org.reactivestreams` (Java)
-  or `reactivex` (Python). RxJava3 / caproto are used in examples but swappable.
-- **Zero build step for examples.** jbang inline deps for Java; plain `python` for Python.
 
 ---
 
