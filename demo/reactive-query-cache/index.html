@@ -1,0 +1,753 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Reactive Query Cache — Live Demo</title>
+<style>
+/* ─── reset / base ──────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:      #090d1a;
+  --panel:   #0f1629;
+  --card:    #141d35;
+  --border:  #1e2d4f;
+  --text:    #e2e8f0;
+  --muted:   #64748b;
+  --cyan:    #00d4ff;
+  --green:   #10b981;
+  --amber:   #f59e0b;
+  --red:     #ef4444;
+  --purple:  #a78bfa;
+  --font:    'Segoe UI', system-ui, sans-serif;
+}
+
+html, body {
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 13px;
+}
+
+/* ─── header ────────────────────────────────────────────────────────────────── */
+header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 20px;
+  height: 50px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  position: sticky; top: 0; z-index: 10;
+  flex-shrink: 0;
+}
+header h1 { font-size: 15px; font-weight: 600; color: var(--cyan); white-space: nowrap; }
+header .sub { font-size: 11px; color: var(--muted); font-style: italic; }
+
+/* ─── page layout ───────────────────────────────────────────────────────────── */
+.page {
+  display: grid;
+  grid-template-columns: 1fr 340px;
+  gap: 12px;
+  padding: 12px;
+  height: calc(100vh - 50px);
+  overflow: hidden;
+}
+
+/* ─── component area (left) ─────────────────────────────────────────────────── */
+.component-area {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow: auto;
+  min-width: 0;
+}
+
+.component-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.component-row-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+
+/* ─── individual component cards ─────────────────────────────────────────────── */
+.comp-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px;
+  position: relative;
+}
+
+.comp-card .comp-title {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.comp-card .kill-btn {
+  position: absolute;
+  top: 6px; right: 8px;
+  background: none;
+  border: none;
+  color: #334155;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  transition: color .2s;
+}
+.comp-card .kill-btn:hover { color: var(--red); }
+
+/* ─── ring SVG component ─────────────────────────────────────────────────────── */
+.ring-comp { width: 240px; }
+.ring-comp svg { width: 220px; height: 220px; display: block; margin: 0 auto; }
+.ring-comp .ring-footer {
+  display: flex;
+  justify-content: space-around;
+  margin-top: 4px;
+  font-size: 11px;
+}
+.ring-comp .ring-footer .label { color: var(--muted); }
+.ring-comp .ring-footer .value { font-weight: 600; color: var(--text); }
+
+.sector-path { transition: fill .4s, stroke .4s; }
+.s-ok      { fill: #0d2e1c; stroke: #10b981; stroke-width: 1.5; }
+.s-orbit   { fill: #2d1a00; stroke: #f59e0b; stroke-width: 1.5; }
+.s-alarm   { fill: #300a0a; stroke: #ef4444; stroke-width: 2; }
+
+@keyframes flash-ring { 0%,100%{opacity:1} 50%{opacity:.65} }
+.s-alarm { animation: flash-ring 1.2s ease-in-out infinite; }
+
+.ring-readout { dominant-baseline: middle; text-anchor: middle; font-family: var(--font); }
+.r-current   { font-size: 22px; font-weight: 700; fill: var(--cyan); }
+.r-unit      { font-size: 10px; fill: var(--muted); }
+.r-lifetime  { font-size: 11px; fill: var(--text); }
+.r-scenario  { font-size: 11px; fill: var(--amber); font-style: italic; }
+.r-interlocks{ font-size: 12px; font-weight: 700; }
+
+/* beam dot animation */
+.beam-orbit-g { }
+@keyframes orbit { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
+
+/* ─── table component ─────────────────────────────────────────────────────────── */
+.table-comp { min-width: 260px; }
+.table-comp table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.table-comp th {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  text-align: left;
+  padding: 3px 6px;
+  border-bottom: 1px solid var(--border);
+}
+.table-comp td {
+  padding: 4px 6px;
+  font-size: 12px;
+  border-bottom: 1px solid #12192e;
+  white-space: nowrap;
+}
+.table-comp td.key-col { color: var(--muted); font-size: 11px; }
+.table-comp td.val-col { font-weight: 600; color: var(--text); text-align: right; min-width: 80px; }
+.table-comp td.unit-col { color: var(--muted); font-size: 10px; }
+.table-comp tr.fresh-row { }
+.table-comp tr.stale-row td.val-col { color: #475569; }
+.table-comp .connecting-msg { color: var(--muted); font-size: 11px; padding: 8px 6px; }
+
+/* ─── controls bar ────────────────────────────────────────────────────────────── */
+.controls {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+.controls .ctrl-label { font-size: 11px; color: var(--muted); margin-right: 4px; }
+.btn {
+  padding: 4px 12px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--card);
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+  transition: border-color .2s, background .2s;
+}
+.btn:hover { border-color: var(--cyan); background: #0d1a30; }
+.btn.btn-danger { border-color: #300a0a; color: var(--red); }
+.btn.btn-danger:hover { border-color: var(--red); background: #1a0505; }
+
+/* ─── cache inspector (right panel) ──────────────────────────────────────────── */
+.inspector {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+}
+.inspector h2 {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+/* ─── headline gauge ──────────────────────────────────────────────────────────── */
+.gauge-box {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+.gauge-item { display: flex; flex-direction: column; gap: 2px; }
+.gauge-label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .07em; }
+.gauge-value { font-size: 22px; font-weight: 700; }
+.gauge-value.comp-color  { color: var(--purple); }
+.gauge-value.scada-color { color: var(--cyan); }
+
+.arrow-row {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.arrow-row .arrow { font-size: 16px; color: var(--green); }
+.arrow-row .ops   { margin-left: auto; color: var(--text); font-weight: 600; }
+
+/* ─── per-key table in inspector ──────────────────────────────────────────────── */
+.key-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+.key-table th {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  color: var(--muted);
+  text-align: left;
+  padding: 3px 4px;
+  border-bottom: 1px solid var(--border);
+}
+.key-table td { padding: 3px 4px; border-bottom: 1px solid #12192e; }
+.key-table .key-name { color: #94a3b8; font-size: 10px; }
+.key-table .obs-count { text-align: center; font-weight: 700; color: var(--purple); }
+.key-table .up-live { text-align: center; }
+.key-table .up-live.live   { color: var(--green); }
+.key-table .up-live.dead   { color: #334155; }
+.key-table .last-val { text-align: right; font-weight: 600; color: var(--text); }
+.key-table .freshness { text-align: center; font-size: 9px; font-weight: 700; border-radius: 3px; padding: 1px 4px; }
+.key-table .freshness.fresh { background: #0a1f11; color: var(--green); }
+.key-table .freshness.stale { background: #1a1008; color: var(--amber); }
+.key-table .freshness.none  { color: var(--muted); }
+.key-table .gc-badge { text-align: center; font-size: 9px; color: var(--amber); }
+
+.inspector-note {
+  font-size: 10px;
+  color: #475569;
+  line-height: 1.5;
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+  flex-shrink: 0;
+}
+.inspector-note strong { color: var(--muted); }
+
+/* ─── connection status dots ──────────────────────────────────────────────────── */
+.dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 4px; }
+.dot.ok   { background: var(--green); }
+.dot.err  { background: var(--red); animation: flash-ring 1s ease-in-out infinite; }
+.dot.wait { background: var(--amber); }
+</style>
+</head>
+<body>
+
+<!-- ════════════════════════════════ HEADER ════════════════════════════════════ -->
+<header>
+  <h1>⚛ Reactive Query Cache Demo</h1>
+  <span class="sub">Rx-backed app-level cache — upstream SCADA load stays flat</span>
+</header>
+
+<!-- ════════════════════════════════ PAGE ══════════════════════════════════════ -->
+<div class="page">
+
+  <!-- ─── left: component area ──────────────────────────────────────────────── -->
+  <div class="component-area">
+
+    <!-- Ring components -->
+    <div>
+      <div class="component-row-label">🔵 Ring (Tango) components</div>
+      <div class="component-row" id="ring-row"></div>
+    </div>
+
+    <!-- Table components -->
+    <div>
+      <div class="component-row-label">📋 Table components (same upstream keys, different UI)</div>
+      <div class="component-row" id="table-row"></div>
+    </div>
+
+    <!-- Controls -->
+    <div class="controls">
+      <span class="ctrl-label">Spawn:</span>
+      <button class="btn" onclick="spawnRing()">+ Ring component</button>
+      <button class="btn" onclick="spawnTable()">+ Table component</button>
+      <span class="ctrl-label" style="margin-left:12px;">Kill:</span>
+      <button class="btn btn-danger" onclick="killLast('ring')">Kill last Ring</button>
+      <button class="btn btn-danger" onclick="killLast('table')">Kill last Table</button>
+    </div>
+
+  </div><!-- /component-area -->
+
+  <!-- ─── right: cache inspector ────────────────────────────────────────────── -->
+  <div class="inspector">
+    <h2>🔍 Cache Inspector</h2>
+
+    <!-- headline gauge -->
+    <div class="gauge-box" id="gauge-box">
+      <div class="gauge-item">
+        <span class="gauge-label">Component subs</span>
+        <span class="gauge-value comp-color" id="g-comp-subs">—</span>
+      </div>
+      <div class="gauge-item">
+        <span class="gauge-label">Upstream SCADA subs</span>
+        <span class="gauge-value scada-color" id="g-upstream-subs">—</span>
+      </div>
+      <div class="arrow-row">
+        <span id="g-comp-label" style="color:var(--purple)">— components</span>
+        <span class="arrow">→</span>
+        <span id="g-upstream-label" style="color:var(--cyan)">— SCADA subs</span>
+        <span class="ops" id="g-ops">— ops/s</span>
+      </div>
+    </div>
+
+    <!-- per-key table -->
+    <table class="key-table" id="key-table">
+      <thead>
+        <tr>
+          <th>Key</th>
+          <th title="Component observers">Obs</th>
+          <th title="Upstream subscription live?">↑</th>
+          <th>Last value</th>
+          <th>Fresh</th>
+          <th title="GC grace timer pending">GC</th>
+        </tr>
+      </thead>
+      <tbody id="key-tbody">
+        <tr><td colspan="6" style="color:var(--muted);padding:8px 4px;">Waiting for metrics…</td></tr>
+      </tbody>
+    </table>
+
+    <div class="inspector-note">
+      <strong>How to read this:</strong><br>
+      Obs = component subscriptions to this key.<br>
+      ↑ = one upstream SCADA sub (green = live).<br>
+      Spawn more components — Obs climbs, ↑ stays 1.<br>
+      Kill the last consumer — GC arms, then ↑ goes dark.
+    </div>
+  </div><!-- /inspector -->
+
+</div><!-- /page -->
+
+<!-- ════════════════════════════════ SCRIPT ════════════════════════════════════ -->
+<script>
+"use strict";
+
+// ── constants ────────────────────────────────────────────────────────────────
+const SCENARIO_NAMES = {0:"nominal", 1:"orbit_drift", 2:"vacuum_burst", 3:"beam_loss"};
+const ORBIT_ALARM    = 55.0;   // µm (from facility.py)
+const MIN_CURRENT    = 50.0;   // mA
+const BEAM_MAX       = 320.0;  // mA (nominal gauge max)
+const GAUGE_C        = 2 * Math.PI * 95;  // circumference for r=95 in 220px SVG
+
+// ── Ring component keys (subscribed from each Ring instance) ─────────────────
+const RING_KEYS  = ["ring.current","ring.interlocks","ring.lifetime","ring.scenario_id","sector04.orbit_x"];
+// ── Table component keys (overlaps with ring on current, interlocks, lifetime, orbit_x) ──
+const TABLE_KEYS = ["ring.current","ring.interlocks","ring.lifetime","sector04.orbit_x",
+                    "beam.angle","beam.shutter","beam.counts"];
+
+// ── component registry ───────────────────────────────────────────────────────
+// NOTE: one EventSource per component is the simplest transport (stateless,
+// auto-reconnecting, no JS plumbing).  The tradeoff: HTTP/1.1 browsers allow
+// ~6 concurrent connections per host.  With /metrics/stream always open that
+// leaves room for ~5 components per tab before new ones stall silently.
+// If you need more, upgrade to a single shared WebSocket /ws that multiplexes
+// all component subscriptions; the QueryCache backend is unchanged.
+const components = new Map();  // id -> { type, eventSource, el, state }
+let   _nextId    = 1;
+
+// ── SVG ring geometry ────────────────────────────────────────────────────────
+const CX=110, CY=110, R_OUT=90, R_IN=54, R_MID=72, R_GAUGE=95;
+const GAP_DEG=1.8, SVG_NS="http://www.w3.org/2000/svg";
+
+function polarXY(cx,cy,r,deg) {
+  const rad = deg * Math.PI / 180;
+  return [cx + r*Math.cos(rad), cy + r*Math.sin(rad)];
+}
+
+function sectorPath(startDeg, endDeg) {
+  const [x1o,y1o]=polarXY(CX,CY,R_OUT,startDeg);
+  const [x2o,y2o]=polarXY(CX,CY,R_OUT,endDeg);
+  const [x2i,y2i]=polarXY(CX,CY,R_IN, endDeg);
+  const [x1i,y1i]=polarXY(CX,CY,R_IN, startDeg);
+  const large=(endDeg-startDeg)>180?1:0;
+  return [`M${x1o.toFixed(1)},${y1o.toFixed(1)}`,
+          `A${R_OUT},${R_OUT},0,${large},1,${x2o.toFixed(1)},${y2o.toFixed(1)}`,
+          `L${x2i.toFixed(1)},${y2i.toFixed(1)}`,
+          `A${R_IN},${R_IN},0,${large},0,${x1i.toFixed(1)},${y1i.toFixed(1)}`,`Z`].join(' ');
+}
+
+// ── build ring SVG markup ─────────────────────────────────────────────────────
+function buildRingSvg(id) {
+  const svg = document.createElementNS(SVG_NS,'svg');
+  svg.setAttribute('viewBox','0 0 220 220');
+
+  // defs: glow + dot gradient
+  svg.innerHTML = `
+    <defs>
+      <filter id="rg-${id}" x="-40%" y="-40%" width="180%" height="180%">
+        <feGaussianBlur in="SourceGraphic" stdDeviation="4" result="b"/>
+        <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+      </filter>
+      <radialGradient id="dg-${id}" cx="50%" cy="50%" r="50%">
+        <stop offset="0%" stop-color="#00d4ff" stop-opacity="1"/>
+        <stop offset="100%" stop-color="#0080ff" stop-opacity=".5"/>
+      </radialGradient>
+    </defs>`;
+
+  // 8 sectors
+  const sectorsG = document.createElementNS(SVG_NS,'g');
+  sectorsG.id = `sectors-${id}`;
+  for (let i=0; i<8; i++) {
+    const start = -90 + i*45 + GAP_DEG;
+    const end   = -90 + (i+1)*45 - GAP_DEG;
+    const p = document.createElementNS(SVG_NS,'path');
+    p.id = `s${id}-${i+1}`;
+    p.setAttribute('d', sectorPath(start, end));
+    p.classList.add('sector-path','s-ok');
+    sectorsG.appendChild(p);
+  }
+  svg.appendChild(sectorsG);
+
+  // current gauge arc (r=95)
+  const gaugeBg = document.createElementNS(SVG_NS,'circle');
+  gaugeBg.setAttribute('cx',CX); gaugeBg.setAttribute('cy',CY); gaugeBg.setAttribute('r',R_GAUGE);
+  gaugeBg.setAttribute('fill','none'); gaugeBg.setAttribute('stroke','#1e2d4f'); gaugeBg.setAttribute('stroke-width','4');
+  svg.appendChild(gaugeBg);
+  const gaugeArc = document.createElementNS(SVG_NS,'circle');
+  gaugeArc.id = `gauge-${id}`;
+  gaugeArc.setAttribute('cx',CX); gaugeArc.setAttribute('cy',CY); gaugeArc.setAttribute('r',R_GAUGE);
+  gaugeArc.setAttribute('fill','none'); gaugeArc.setAttribute('stroke','#10b981'); gaugeArc.setAttribute('stroke-width','4');
+  gaugeArc.setAttribute('stroke-linecap','round');
+  gaugeArc.setAttribute('stroke-dasharray', GAUGE_C.toFixed(1));
+  gaugeArc.setAttribute('stroke-dashoffset', GAUGE_C.toFixed(1));
+  gaugeArc.setAttribute('transform',`rotate(-90 ${CX} ${CY})`);
+  svg.appendChild(gaugeArc);
+
+  // orbiting beam dot
+  const orbitG = document.createElementNS(SVG_NS,'g');
+  orbitG.id = `orbit-${id}`;
+  orbitG.setAttribute('filter',`url(#rg-${id})`);
+  orbitG.style.cssText = `transform-origin:${CX}px ${CY}px; animation:orbit 5s linear infinite;`;
+  const dot = document.createElementNS(SVG_NS,'circle');
+  dot.id = `dot-${id}`;
+  dot.setAttribute('cx',CX); dot.setAttribute('cy', CY - R_OUT + 7);  // top of ring
+  dot.setAttribute('r','6');
+  dot.setAttribute('fill', `url(#dg-${id})`);
+  orbitG.appendChild(dot);
+  svg.appendChild(orbitG);
+
+  // center readouts
+  const mkTxt = (id_, cls_, x_, y_) => {
+    const t = document.createElementNS(SVG_NS,'text');
+    t.id = id_; t.setAttribute('class','ring-readout '+cls_);
+    t.setAttribute('x',x_); t.setAttribute('y',y_);
+    return t;
+  };
+  svg.appendChild(mkTxt(`rc-${id}`,'r-current',CX, CY-14));
+  const unitTxt = mkTxt(`ru-${id}`,'r-unit',CX, CY+2); unitTxt.textContent='mA'; svg.appendChild(unitTxt);
+  svg.appendChild(mkTxt(`rl-${id}`,'r-lifetime',CX, CY+17));
+  svg.appendChild(mkTxt(`rs-${id}`,'r-scenario',CX, CY+31));
+
+  // interlock badge
+  const ilCirc = document.createElementNS(SVG_NS,'circle');
+  ilCirc.id=`ric-${id}`; ilCirc.setAttribute('cx',CX); ilCirc.setAttribute('cy',CY+47);
+  ilCirc.setAttribute('r','12'); ilCirc.setAttribute('fill','#1e2d4f');
+  ilCirc.setAttribute('stroke','#334155'); ilCirc.setAttribute('stroke-width','1.5');
+  svg.appendChild(ilCirc);
+  const ilTxt = mkTxt(`ri-${id}`,'r-interlocks',CX, CY+48); ilTxt.textContent='0'; svg.appendChild(ilTxt);
+
+  return svg;
+}
+
+// ── render ring from state ────────────────────────────────────────────────────
+function renderRing(id, state) {
+  const current    = state['ring.current']    ?? null;
+  const interlocks = state['ring.interlocks'] ?? null;
+  const lifetime   = state['ring.lifetime']   ?? null;
+  const scenarioId = state['ring.scenario_id'] ?? 0;
+  const orbitX     = state['sector04.orbit_x'] ?? 0;
+
+  if (current === null) return;  // not yet received
+
+  // center text
+  const setTxt = (eid, val) => {
+    const el = document.getElementById(eid); if (el) el.textContent = val;
+  };
+  setTxt(`rc-${id}`, current.toFixed(1));
+  setTxt(`rl-${id}`, `${(lifetime??0).toFixed(1)} h`);
+  setTxt(`rs-${id}`, (SCENARIO_NAMES[scenarioId]||'nominal').replace('_',' '));
+
+  // interlocks
+  const il = interlocks ?? 0;
+  const ilEl  = document.getElementById(`ri-${id}`);
+  const ilCir = document.getElementById(`ric-${id}`);
+  if (ilEl)  { ilEl.textContent = il; ilEl.style.fill = il>0 ? '#ef4444' : '#64748b'; }
+  if (ilCir) {
+    ilCir.setAttribute('fill',   il>0 ? '#3d0505' : '#1e2d4f');
+    ilCir.setAttribute('stroke', il>0 ? '#ef4444' : '#334155');
+  }
+
+  // beam dot opacity
+  const dot = document.getElementById(`dot-${id}`);
+  if (dot) dot.setAttribute('opacity', Math.max(0.1, Math.min(1, current/250)).toFixed(2));
+
+  // gauge arc
+  const arc = document.getElementById(`gauge-${id}`);
+  if (arc) {
+    const frac = Math.min(1, Math.max(0, current/BEAM_MAX));
+    arc.style.strokeDashoffset = (GAUGE_C*(1-frac)).toFixed(1);
+    arc.style.stroke = current<50 ? '#ef4444' : current<100 ? '#f59e0b' : '#10b981';
+  }
+
+  // sector04: color sector 4 based on orbit_x alarm
+  for (let i=1; i<=8; i++) {
+    const el = document.getElementById(`s${id}-${i}`);
+    if (!el) continue;
+    el.classList.remove('s-ok','s-orbit','s-alarm');
+    if (i===4 && Math.abs(orbitX) >= ORBIT_ALARM) {
+      el.classList.add('s-alarm');
+    } else {
+      el.classList.add('s-ok');
+    }
+  }
+}
+
+// ── render table from state ───────────────────────────────────────────────────
+function renderTable(id, state) {
+  const rows = [
+    { key:'ring.current',     label:'Ring current',   unit:'mA',  fmt: v=>v.toFixed(1) },
+    { key:'ring.interlocks',  label:'Interlocks',     unit:'',    fmt: v=>String(v) },
+    { key:'ring.lifetime',    label:'Lifetime',       unit:'h',   fmt: v=>v.toFixed(2) },
+    { key:'sector04.orbit_x', label:'S04 orbit X',   unit:'µm',  fmt: v=>v.toFixed(2) },
+    { key:'beam.angle',       label:'Beam angle',     unit:'°',   fmt: v=>v.toFixed(1) },
+    { key:'beam.shutter',     label:'Shutter',        unit:'',    fmt: v=>v?'OPEN':'CLOSED' },
+    { key:'beam.counts',      label:'Det counts',     unit:'cts', fmt: v=>v.toLocaleString() },
+  ];
+
+  const tbody = document.getElementById(`tb-${id}`);
+  if (!tbody) return;
+
+  const received = Object.keys(state).length > 0;
+  if (!received) {
+    tbody.innerHTML = '<tr><td colspan="3" class="connecting-msg">Connecting…</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = '';
+  for (const row of rows) {
+    const val = state[row.key];
+    const tr  = document.createElement('tr');
+    tr.className = (val !== undefined) ? 'fresh-row' : 'stale-row';
+    tr.innerHTML = `
+      <td class="key-col">${row.label}</td>
+      <td class="val-col">${val !== undefined ? row.fmt(val) : '—'}</td>
+      <td class="unit-col">${row.unit}</td>`;
+    tbody.appendChild(tr);
+  }
+}
+
+// ── mount component ───────────────────────────────────────────────────────────
+function mountComponent(type) {
+  const id    = _nextId++;
+  const keys  = type==='ring' ? RING_KEYS : TABLE_KEYS;
+  const row   = document.getElementById(type==='ring' ? 'ring-row' : 'table-row');
+
+  const card  = document.createElement('div');
+  card.id     = `card-${id}`;
+  card.className = `comp-card ${type}-comp`;
+
+  const title = document.createElement('div');
+  title.className = 'comp-title';
+
+  const killBtn = document.createElement('button');
+  killBtn.className = 'kill-btn';
+  killBtn.title = 'Unmount component';
+  killBtn.textContent = '✕';
+  killBtn.onclick = () => unmountComponent(id);
+
+  card.appendChild(title);
+  card.appendChild(killBtn);
+
+  let contentEl;
+  if (type === 'ring') {
+    title.textContent = `Ring #${id}`;
+    contentEl = buildRingSvg(id);
+    card.appendChild(contentEl);
+
+    const footer = document.createElement('div');
+    footer.className = 'ring-footer';
+    footer.innerHTML = `
+      <span><span class="label">status</span></span>
+      <span><span class="dot wait" id="dot-status-${id}"></span>
+            <span class="label" id="status-label-${id}">connecting</span></span>`;
+    card.appendChild(footer);
+  } else {
+    title.textContent = `Table #${id}`;
+    const table = document.createElement('table');
+    const thead = document.createElement('thead');
+    thead.innerHTML = '<tr><th>Signal</th><th>Value</th><th>Unit</th></tr>';
+    const tbody = document.createElement('tbody');
+    tbody.id = `tb-${id}`;
+    tbody.innerHTML = '<tr><td colspan="3" class="connecting-msg">Connecting…</td></tr>';
+    table.appendChild(thead); table.appendChild(tbody);
+    card.appendChild(table);
+  }
+
+  row.appendChild(card);
+
+  // open the SSE stream for this component
+  const state = {};
+  const es    = new EventSource(`/subscribe?keys=${keys.join(',')}`);
+
+  es.onmessage = (evt) => {
+    const {key, value} = JSON.parse(evt.data);
+    state[key] = value;
+    if (type === 'ring') {
+      renderRing(id, state);
+      const dot   = document.getElementById(`dot-status-${id}`);
+      const label = document.getElementById(`status-label-${id}`);
+      const cur   = state['ring.current'];
+      if (dot && cur !== undefined) {
+        const healthy = cur >= MIN_CURRENT && (state['ring.interlocks']??0) === 0;
+        dot.className     = 'dot ' + (healthy ? 'ok' : 'err');
+        label.textContent = healthy ? 'healthy' : cur < MIN_CURRENT ? 'beam low' : 'interlock';
+      }
+    } else {
+      renderTable(id, state);
+    }
+  };
+
+  es.onerror = () => {
+    if (type === 'ring') {
+      const dot = document.getElementById(`dot-status-${id}`);
+      if (dot) dot.className = 'dot err';
+    }
+  };
+
+  components.set(id, { type, eventSource: es, el: card, state });
+  return id;
+}
+
+function unmountComponent(id) {
+  const c = components.get(id);
+  if (!c) return;
+  c.eventSource.close();
+  c.el.remove();
+  components.delete(id);
+}
+
+function spawnRing()  { mountComponent('ring');  }
+function spawnTable() { mountComponent('table'); }
+
+function killLast(type) {
+  // find the last-mounted component of this type
+  let lastId = null;
+  for (const [id, c] of components.entries()) {
+    if (c.type === type) lastId = id;
+  }
+  if (lastId !== null) unmountComponent(lastId);
+}
+
+// ── cache inspector metrics stream ────────────────────────────────────────────
+const metricsEs = new EventSource('/metrics/stream');
+
+metricsEs.onmessage = (evt) => {
+  const m = JSON.parse(evt.data);
+  updateInspector(m);
+};
+
+function updateInspector(m) {
+  const compSubs   = m.total_observers;
+  const scadaSubs  = m.active_upstream_subs;
+  const opsPerSec  = m.ops_per_sec;
+
+  document.getElementById('g-comp-subs').textContent    = compSubs;
+  document.getElementById('g-upstream-subs').textContent = scadaSubs;
+  document.getElementById('g-comp-label').textContent   = `${compSubs} component sub${compSubs!==1?'s':''}`;
+  document.getElementById('g-upstream-label').textContent = `${scadaSubs} SCADA sub${scadaSubs!==1?'s':''}`;
+  document.getElementById('g-ops').textContent           = `${opsPerSec} ops/s`;
+
+  // per-key table
+  const tbody = document.getElementById('key-tbody');
+  const keys  = Object.entries(m.keys || {});
+  if (keys.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="6" style="color:var(--muted);padding:8px 4px">No active keys yet — spawn a component.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = '';
+  for (const [key, info] of keys) {
+    const obs  = info.observers;
+    const live = info.upstream_live;
+    const val  = info.last_value;
+    const fresh= info.fresh;
+    const gc   = info.gc_pending;
+    const valFmt = val !== null && val !== undefined
+      ? (Number.isInteger(val) ? String(val) : val.toFixed(2))
+      : '—';
+
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td class="key-name">${key}</td>
+      <td class="obs-count">${obs}</td>
+      <td class="up-live ${live?'live':'dead'}">${live?'●':'○'}</td>
+      <td class="last-val">${valFmt}</td>
+      <td class="freshness ${val!==null&&val!==undefined?(fresh?'fresh':'stale'):'none'}">${val!==null&&val!==undefined?(fresh?'✓':'~'):'—'}</td>
+      <td class="gc-badge">${gc?'⏱':''}</td>`;
+    tbody.appendChild(tr);
+  }
+}
+
+// ── initial mount: one ring + one table ───────────────────────────────────────
+spawnRing();
+spawnTable();
+</script>
+</body>
+</html>
