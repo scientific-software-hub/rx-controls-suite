@@ -1,5 +1,7 @@
 # rx-controls-suite
 
+[![DOI](https://zenodo.org/badge/1195252803.svg)](https://doi.org/10.5281/zenodo.20614016)
+
 Reactive Programming Suite for Scientific Control Systems — the same
 [ReactiveX](https://reactivex.io/) operator vocabulary across multiple control-system platforms.
 
