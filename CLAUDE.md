@@ -114,18 +114,3 @@ RxTango/java produces jbang catalog artifacts; RxEpics/python produces a wheel. 
 
 GitHub org uses kebab-case (`rx-controls-suite`, `scientific-software-hub`).
 
-## TODO / next steps
-
-- [x] `git mv` RxJTango → `RxTango/java/`, fix `//SOURCES` paths in jbang scripts
-- [x] `git mv` RxEpics → `RxEpics/python/`, verify imports still resolve
-- [x] Write root `README.md` (suite pitch + quick-start for each sub-project)
-- [x] Add `CITATION.cff`
-- [x] Add `LICENSE` (AGPL-3.0) + `LICENSE-COMMERCIAL.md`
-- [x] Set up GitHub Actions workflows per sub-project
-- [x] Add `authors` to `CITATION.cff`
-- [x] Add `pyproject.toml` to `RxEpics/python/` (needed for wheel build in CI)
-- [x] Implement missing `RxEpics/python/src/rxepics/context.py` and `client.py`
-- [x] Add `RxTango/python` — reactive Tango wrapper (PyTango + RxPY v4, mocked tests)
-- [x] Add `demo/synchrotron-beamline/` — combined storage ring + beamline demo (4 reactive patterns)
-- [x] Add `docs/combined-demo-talk/` — capstone HTML deck + slides.md
-- [x] Add `demo/reactive-query-cache/` — Rx-backed app-level QueryCache demo (dedup + replay + gc)
