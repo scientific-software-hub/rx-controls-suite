@@ -18,7 +18,8 @@ rx-controls-suite/
   RxTine/
     java/       ← new (jbang, RxJava3, TINE Java API)
   demo/
-    synchrotron-beamline/ ← combined demo: Tango ring + EPICS beamline, 4 reactive patterns
+    synchrotron-beamline/   ← combined demo: Tango ring + EPICS beamline, 4 reactive patterns
+    reactive-query-cache/   ← app-level Rx cache demo: QueryCache dedup across UI components
   (RxEpics/java, RxTine/python — future)
 ```
 
@@ -67,6 +68,22 @@ Wraps EPICS Channel Access with `Observable[T]` via `caproto[asyncio]` + `reacti
 
 **Key design:** `monitor_pv()` is the primary streaming primitive. No commands (EPICS has none — write to a PV instead). caproto returns numpy arrays; always take index `[0]` for scalars.
 
+### demo/reactive-query-cache
+
+Demonstrates an **app-level cache** built from the suite's own Rx primitives — conceptually a TanStack-Query `QueryClient`, implemented with `ReplaySubject` + ref-count + a gc grace timer.
+
+**The problem it solves:** the suite's primitives (`read_attribute`, `read_pv`) are cold/unicast — every `.subscribe()` opens its own upstream SCADA read. In a multi-component UI, N panels requesting the same key = N upstream reads. The `QueryCache` coalesces all requests for the same key into **one** upstream subscription, keeping SCADA load constant as component count grows.
+
+**Files:**
+- `query_cache.py` — `QueryCache` class: dedup, `replay(1)` last-value cache, `stale_ms`, `gc_ms` teardown
+- `querycache_dashboard.py` — FastAPI backend: per-component SSE `/subscribe`, `/metrics/stream` inspector feed
+- `index.html` — vanilla-JS shell: Ring SVG component + Table component + Cache-Inspector panel + spawn/kill controls
+- `test_query_cache.py` — 7 unit tests against a synthetic upstream (no SCADA needed)
+
+**Transport note:** one `EventSource` per component hits the browser HTTP/1.1 ~6-connection limit at ~5 components. For more, replace with a single multiplexed WebSocket `/ws`; `QueryCache` is unchanged.
+
+**Run:** `uv run --with fastapi --with "uvicorn[standard]" python querycache_dashboard.py` (requires the synchrotron-beamline docker stack).
+
 ## Context & motivation
 
 - Talk planned: **"Reactive Programming in Tango"** at Tango Users Meeting
@@ -111,3 +128,4 @@ GitHub org uses kebab-case (`rx-controls-suite`, `scientific-software-hub`).
 - [x] Add `RxTango/python` — reactive Tango wrapper (PyTango + RxPY v4, mocked tests)
 - [x] Add `demo/synchrotron-beamline/` — combined storage ring + beamline demo (4 reactive patterns)
 - [x] Add `docs/combined-demo-talk/` — capstone HTML deck + slides.md
+- [x] Add `demo/reactive-query-cache/` — Rx-backed app-level QueryCache demo (dedup + replay + gc)
