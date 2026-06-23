@@ -9,7 +9,7 @@ Reactive Programming Suite for Scientific Control Systems — the same
 poll → zip → sliding-average → backpressure → fluent pipeline
 ```
 
-Works the same way whether you're talking to **Tango Controls** (Java or Python) or **EPICS** (Python).
+Works the same way whether you're talking to **Tango Controls** (Java, Python, or C++) or **EPICS** (Python or C++).
 
 ---
 
@@ -21,6 +21,8 @@ Works the same way whether you're talking to **Tango Controls** (Java or Python)
 | [RxTango/python](RxTango/python/) | Tango Controls | Python 3.10+ | uv + RxPY v4 + PyTango |
 | [RxEpics/python](RxEpics/python/) | EPICS Channel Access | Python 3.10+ | uv + RxPY v4 + caproto |
 | [RxTine/java](RxTine/java/) | TINE (DESY) | Java 11+ | jbang + RxJava3 + TINE Java API |
+| [RxTango/cpp](RxTango/cpp/) | Tango Controls | C++17 | CMake + RxCpp + cppTango |
+| [RxEpics/cpp](RxEpics/cpp/) | EPICS (PVA) | C++17 | CMake + RxCpp + PVXS |
 
 ---
 
@@ -32,7 +34,7 @@ Works the same way whether you're talking to **Tango Controls** (Java or Python)
   [reactive-streams TCK](https://github.com/reactive-streams/reactive-streams-jvm/tree/master/tck).
 - **No framework lock-in.** Production code depends only on `org.reactivestreams` (Java)
   or `reactivex` (Python). RxJava3 / caproto are used in examples but swappable.
-- **Zero build step for examples.** jbang inline deps for Java; plain `python` for Python.
+- **Zero build step for examples.** jbang inline deps for Java; plain `python` for Python; CMake + FetchContent for C++ (RxCpp fetched automatically).
 
 ---
 
@@ -103,6 +105,51 @@ docker compose up -d          # start jsineServer (JSINESRV in context TEST)
 jbang read-property@. /TEST/JSINESRV/SINEDEV_0@jsinesrv Sine
 jbang poll@.          /TEST/JSINESRV/SINEDEV_0@jsinesrv Sine 500
 jbang pipeline@.      /TEST/JSINESRV/SINEDEV_0@jsinesrv
+```
+
+---
+
+## RxTango/cpp — quick start
+
+Prerequisites: C++17 compiler, CMake 3.18+, cppTango (`pkg-config tango`), Docker.
+
+```shell
+cd RxTango/cpp
+docker compose up -d          # reuses RxTango/java Tango stack (TangoTest sys/tg_test/1)
+
+cmake -S . -B build
+cmake --build build
+
+./build/examples/read_attribute sys/tg_test/1 double_scalar
+./build/examples/monitor_attribute sys/tg_test/1 double_scalar
+./build/examples/pipeline sys/tg_test/1
+
+# verify ReactiveX contract (Rx-spec conformance test)
+./build/tests/verify_contract
+```
+
+---
+
+## RxEpics/cpp — quick start
+
+Prerequisites: C++17 compiler, CMake 3.18+, PVXS (`find_package(PVXS)` or `pkg-config pvxs`), Docker.
+
+```shell
+cd RxEpics/cpp
+docker compose up -d          # reuses RxEpics/python softIoc (TEST:CALC, TEST:DOUBLE, ...)
+
+export EPICS_PVA_ADDR_LIST=localhost
+export EPICS_PVA_AUTO_ADDR_LIST=NO
+
+cmake -S . -B build
+cmake --build build
+
+./build/examples/read_pv TEST:DOUBLE TEST:LONG
+./build/examples/monitor_pv TEST:CALC
+./build/examples/pv_pipeline
+
+# verify ReactiveX contract (first EPICS reactive conformance test in the suite)
+./build/tests/verify_contract
 ```
 
 ---

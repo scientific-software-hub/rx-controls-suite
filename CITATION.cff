@@ -5,7 +5,9 @@ title: "rx-controls-suite: Reactive Programming Suite for Scientific Control Sys
 abstract: >
   A monorepo suite of ReactiveX wrappers for scientific control system frameworks.
   Provides the same operator vocabulary — poll, zip, sliding average, backpressure,
-  fluent pipelines — across Tango Controls (Java) and EPICS Channel Access (Python).
+  fluent pipelines — across Tango Controls (Java, Python, C++17), EPICS (Python, C++17
+  via PVXS), and TINE (Java). C++ bindings use RxCpp with cppTango (Tango) and PVXS
+  (EPICS); Java bindings use RxJava3; Python bindings use RxPY v4.
 authors:
   - family-names: Khokhriakov
     given-names: Igor
@@ -21,4 +23,9 @@ keywords:
   - reactivex
   - rxjava
   - rxpy
+  - rxcpp
+  - cpptango
+  - pvxs
+  - tine
   - scientific-software
+  - cpp17

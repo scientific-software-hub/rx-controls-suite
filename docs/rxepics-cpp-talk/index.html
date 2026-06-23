@@ -1,0 +1,603 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Reactive Programming for EPICS Controls (C++)</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/cpp.min.js"></script>
+<style>
+  :root {
+    --navy:      #1a3a5c;
+    --navy-dk:   #0e2540;
+    --orange:    #e87722;
+    --orange-lt: #f4a24e;
+    --white:     #ffffff;
+    --off-wh:    #f5f7fa;
+    --slate:     #334155;
+    --mid:       #64748b;
+    --border:    #dde3ec;
+    --code-bg:   #1e2a3a;
+    --green:     #166534;
+    --green-bg:  #f0fdf4;
+    --green-bd:  #86efac;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { font-size: 150%; }
+  html, body {
+    width: 100%; height: 100%; overflow: hidden;
+    font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+    background: #000; color: var(--slate);
+  }
+
+  #deck { width: 100%; height: 100%; position: relative; }
+
+  .slide {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column;
+    opacity: 0; pointer-events: none;
+    transition: opacity .35s ease;
+  }
+  .slide.active { opacity: 1; pointer-events: all; }
+
+  /* Header */
+  .slide-header {
+    background: var(--navy-dk); padding: 0 2.5rem; height: 56px;
+    display: flex; align-items: center; justify-content: space-between;
+    flex-shrink: 0; border-bottom: 3px solid var(--orange);
+  }
+  .logo { display: flex; align-items: center; gap: .6rem;
+    font-size: .8rem; color: rgba(255,255,255,.5); }
+  .logo strong { color: #fff; font-size: .92rem; }
+  .logo-mark {
+    width: 28px; height: 28px; border-radius: 5px; background: var(--orange);
+    display: grid; place-items: center;
+    font-weight: 900; font-size: .85rem; color: #fff;
+  }
+  .slide-num { font-size: .72rem; color: rgba(255,255,255,.3); letter-spacing: .08em; }
+
+  /* Section strip */
+  .section-strip {
+    background: var(--navy); padding: 1rem 2.5rem;
+    display: flex; align-items: baseline; gap: 1rem; flex-shrink: 0;
+  }
+  .section-num   { font-size: .65rem; letter-spacing: .15em; text-transform: uppercase;
+    color: var(--orange); font-weight: 700; }
+  .section-title { font-size: 1.5rem; font-weight: 700; color: #fff; line-height: 1.2; }
+  .section-sub   { font-size: .85rem; color: rgba(255,255,255,.4); margin-left: auto; }
+
+  /* Labels */
+  .label {
+    display: inline-flex; align-items: center; font-size: .63rem; font-weight: 700;
+    letter-spacing: .1em; text-transform: uppercase;
+    padding: .17rem .52rem; border-radius: 9999px;
+  }
+  .label-orange { background: #fff3e8; color: var(--orange); border: 1px solid #f4c08a; }
+  .label-navy   { background: #e8eef6; color: var(--navy);   border: 1px solid #b8d0ea; }
+  .label-green  { background: var(--green-bg); color: var(--green); border: 1px solid var(--green-bd); }
+
+  /* Two-column layout */
+  .two-col {
+    flex: 1; overflow: hidden;
+    display: grid; grid-template-columns: 1fr 1fr;
+  }
+  .panel {
+    padding: 1.3rem 1.9rem; overflow: hidden;
+    display: flex; flex-direction: column; gap: .8rem;
+  }
+  .panel + .panel { border-left: 1px solid var(--border); }
+
+  .mt-auto { margin-top: auto; }
+  .text-sm { font-size: .78rem; color: var(--mid); line-height: 1.5; }
+
+  .scenario {
+    background: #fff; border-left: 4px solid var(--orange);
+    border-radius: 0 8px 8px 0; padding: .85rem 1rem;
+    font-size: .88rem; font-style: italic; color: var(--slate); line-height: 1.55;
+    box-shadow: 0 1px 4px rgba(0,0,0,.06);
+  }
+
+  .bullet-list { list-style: none; display: flex; flex-direction: column; gap: .45rem; }
+  .bullet-list li {
+    padding-left: 1.25rem; position: relative;
+    font-size: .82rem; color: var(--slate); line-height: 1.45;
+  }
+  .bullet-list li::before { content: '▸'; position: absolute; left: 0;
+    color: var(--mid); font-size: .7rem; top: .14em; }
+  .bullet-list li strong { color: var(--navy); }
+  .bullet-list li.pain { color: #7f1d1d; }
+  .bullet-list li.pain::before { color: #ef4444; }
+
+  .verdict {
+    background: #fff3e8; border: 1px solid #f4c08a; border-radius: 8px;
+    padding: .75rem 1rem; font-size: .82rem; font-weight: 600;
+    color: #7c3800; line-height: 1.45;
+  }
+  .guarantee {
+    background: var(--green-bg); border: 1px solid var(--green-bd);
+    border-radius: 8px; padding: .65rem .95rem;
+    font-size: .79rem; color: var(--green); font-weight: 600; line-height: 1.4;
+  }
+
+  /* Code */
+  .code-wrap {
+    display: flex; flex-direction: column; background: var(--code-bg);
+    border-radius: 9px; overflow: hidden; box-shadow: 0 3px 12px rgba(0,0,0,.18);
+  }
+  .code-label {
+    background: #162030; padding: .35rem .85rem;
+    font-size: .65rem; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--orange-lt); font-weight: 600;
+    border-bottom: 1px solid rgba(255,255,255,.07); flex-shrink: 0;
+  }
+  .code-wrap pre { margin: 0; }
+  .code-wrap code.hljs {
+    background: var(--code-bg) !important;
+    padding: .75rem .95rem !important; font-size: .74rem; line-height: 1.55;
+  }
+
+  /* Global slide body */
+  .slide-body {
+    flex: 1; display: flex; flex-direction: column;
+    background: var(--off-wh); overflow: hidden;
+  }
+
+  /* SLIDE 1 & 6: Title / Thanks */
+  #s-title .slide-body,
+  #s-thanks .slide-body {
+    flex: 1; background: var(--navy);
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    position: relative; overflow: hidden;
+  }
+  #s-title .slide-body::before,
+  #s-thanks .slide-body::before {
+    content: ''; position: absolute; inset: 0;
+    background:
+      radial-gradient(ellipse 70% 50% at 80% 50%, rgba(232,119,34,.18) 0%, transparent 65%),
+      radial-gradient(ellipse 50% 80% at 20% 80%, rgba(255,255,255,.04) 0%, transparent 60%);
+  }
+  .title-tag { font-size: .7rem; letter-spacing: .2em; text-transform: uppercase;
+    color: var(--orange-lt); margin-bottom: 1rem; z-index: 1; }
+  .title-main { font-size: 3.1rem; font-weight: 800; color: #fff;
+    line-height: 1.1; text-align: center; z-index: 1; }
+  .title-main em { color: var(--orange); font-style: normal; }
+  .title-sub { margin-top: .9rem; font-size: 1.05rem; color: rgba(255,255,255,.58);
+    text-align: center; z-index: 1; }
+  .title-byline { margin-top: .4rem; font-size: .82rem; color: rgba(255,255,255,.32);
+    text-align: center; z-index: 1; }
+  .title-author { margin-top: 1.8rem; z-index: 1;
+    background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.16);
+    border-radius: 9999px; padding: .45rem 1.3rem; color: #fff; font-size: .88rem; }
+  .title-github { margin-top: .9rem; font-size: .77rem; color: rgba(255,255,255,.35); z-index: 1; }
+  .title-github a { color: var(--orange-lt); text-decoration: none; }
+
+  /* SLIDE 5: Architecture */
+  .arch-body { flex: 1; overflow: hidden; display: grid; grid-template-columns: 1.1fr 1fr; }
+  .arch-flow { padding: 1.3rem 2rem; display: flex; flex-direction: column; justify-content: center; gap: 0; }
+
+  .af-node { display: flex; align-items: stretch; gap: .8rem; }
+  .af-left { display: flex; flex-direction: column; align-items: center; width: 16px; flex-shrink: 0; }
+  .af-dot  { width: 13px; height: 13px; border-radius: 50%; flex-shrink: 0; margin-top: .55rem; }
+  .af-line { flex: 1; width: 2px; background: var(--border); margin: 2px 0; }
+  .af-card { flex: 1; background: #fff; border: 1px solid var(--border);
+    border-radius: 9px; padding: .62rem 1rem; margin-bottom: .18rem;
+    box-shadow: 0 1px 4px rgba(0,0,0,.05); }
+  .af-card h4 { font-size: .85rem; font-weight: 700; color: var(--navy); margin-bottom: .18rem; }
+  .af-card p  { font-size: .74rem; color: var(--mid); line-height: 1.4; }
+  .af-card code { font-size: .72rem; color: var(--orange); font-weight: 600; }
+
+  .af-node.src .af-dot { background: var(--orange); }
+  .af-node.ops .af-dot { background: #6366f1; }
+  .af-node.app .af-dot { background: var(--navy); }
+  .af-node.out .af-dot { background: #16a34a; }
+  .af-node.src .af-card { border-color: #f4c08a; background: #fff8f0; }
+  .af-node.ops .af-card { border-color: #c7d2fe; background: #f5f3ff; }
+  .af-node.out .af-card { border-color: var(--green-bd); background: var(--green-bg); }
+
+  .arch-example { background: var(--navy); padding: 1.4rem 1.7rem;
+    display: flex; flex-direction: column; gap: .9rem;
+    border-left: 3px solid var(--orange); }
+  .arch-ex-label { font-size: .65rem; letter-spacing: .2em; text-transform: uppercase;
+    color: rgba(255,255,255,.38); font-weight: 600; }
+  .arch-ex-title { font-size: 1rem; font-weight: 700; color: #fff; }
+  .arch-ex-desc  { font-size: .78rem; color: rgba(255,255,255,.52); line-height: 1.5; }
+
+  /* Progress & nav */
+  #progress-bar { position: fixed; bottom: 0; left: 0; height: 3px;
+    background: var(--orange); transition: width .35s ease; z-index: 9999; }
+  #nav-hint { position: fixed; bottom: 7px; right: 13px; font-size: .65rem;
+    color: rgba(255,255,255,.18); letter-spacing: .07em; z-index: 9999; pointer-events: none; }
+
+  /* Thanks links */
+  .thanks-links { display: flex; gap: 2.5rem; z-index: 1; margin-top: 2rem; }
+  .thanks-link {
+    padding: .7rem 1.6rem; border-radius: 9px;
+    background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.16);
+    color: rgba(255,255,255,.75); font-size: .82rem; text-decoration: none;
+    transition: background .2s; text-align: center; line-height: 1.6;
+  }
+  .thanks-link strong { display: block; color: var(--orange-lt); font-size: .9rem; }
+  .thanks-link:hover { background: rgba(255,255,255,.14); }
+</style>
+</head>
+<body>
+<div id="deck">
+
+<!-- ═══════════════════ SLIDE 1 — TITLE ══════════════════════════════ -->
+<div class="slide active" id="s-title">
+  <div class="slide-header">
+    <div class="logo">
+      <div class="logo-mark">Rx</div>
+      <div><strong>Reactive Programming for EPICS Controls (C++)</strong></div>
+    </div>
+    <div class="slide-num">1 / 6</div>
+  </div>
+  <div class="slide-body">
+    <div class="title-tag">EPICS Collaboration Meeting · C++ Edition</div>
+    <div class="title-main">
+      Reactive Programming<br>for <em>EPICS Controls</em>
+    </div>
+    <div class="title-sub">C++17 — PVXS PVA + RxCpp, zero-overhead reactive pipelines</div>
+    <div class="title-byline">RxEpics/cpp · observable&lt;T&gt; PV streams · first EPICS conformance test in the suite</div>
+    <div class="title-author">Igor Khokhriakov &nbsp;·&nbsp; Principal Software Engineer</div>
+    <div class="title-github">
+      <a href="https://github.com/scientific-software-hub/rx-controls-suite">github.com/scientific-software-hub/rx-controls-suite</a>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ SLIDE 2 — PATTERN 1: ZIP ════════════════════ -->
+<div class="slide" id="s-zip">
+  <div class="slide-header">
+    <div class="logo">
+      <div class="logo-mark">Rx</div>
+      <div><strong>Reactive Programming for EPICS Controls (C++)</strong></div>
+    </div>
+    <div class="slide-num">2 / 6</div>
+  </div>
+  <div class="slide-body">
+    <div class="section-strip">
+      <span class="section-num">Pattern 1</span>
+      <span class="section-title">Correlated Multi-PV Reads</span>
+      <span class="section-sub">Beyond sequential pvxs::client::Context::get()</span>
+    </div>
+    <div class="two-col">
+      <div class="panel">
+        <span class="label label-navy">The scenario</span>
+        <div class="scenario">
+          "Every 500 ms, read <code>BEAM:CURRENT</code> and <code>ORBIT:XPOS</code> —
+          only process the pair if both arrive in the same polling window.
+          Discard if either times out."
+        </div>
+        <span class="label label-orange">With today's tools…</span>
+        <ul class="bullet-list">
+          <li>Two sequential <strong>ctx.get(pv).exec()-&gt;wait(5.0)</strong> — a timing gap</li>
+          <li class="pain"><strong>std::thread pair + std::future</strong> to parallelise — manual pairing and error handling</li>
+          <li class="pain">No built-in "atomic multi-PV read" in PVXS — every project rolls its own</li>
+        </ul>
+        <div class="verdict mt-auto">
+          EPICS C++ applications reimplementing this same parallel-read pattern
+          from scratch is the rule, not the exception. Each variant handles edge
+          cases slightly differently.
+        </div>
+      </div>
+      <div class="panel">
+        <span class="label label-green">With Rx — rxcpp::observable&lt;&gt;::zip()</span>
+        <div class="code-wrap" style="flex:1;">
+          <div class="code-label">C++17 · observable&lt;&gt;::zip()</div>
+          <pre><code class="language-cpp">rxcpp::observable&lt;&gt;::interval(500ms)
+  .flat_map([&amp;ctx](long) {
+    // Both reads fire on background threads in parallel
+    return rxcpp::observable&lt;&gt;::zip(
+      [](double c, double x) {
+        return process(c, x); },
+      rxepics::read_pv&lt;double&gt;(
+          "BEAM:CURRENT", ctx),
+      rxepics::read_pv&lt;double&gt;(
+          "ORBIT:XPOS",   ctx)
+    );
+  })
+  .subscribe([](auto result) {
+    publish(result); });</code></pre>
+        </div>
+        <div class="guarantee">
+          ✓ &nbsp;Zero std::promise. Zero shared state.<br>
+          ✓ &nbsp;If either PV times out the pair is silently dropped.<br>
+          ✓ &nbsp;PVXS Value extracted via <code>.as&lt;T&gt;()</code> — template selects type.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ SLIDE 3 — PATTERN 2: MONITOR + SLIDING AVG ══ -->
+<div class="slide" id="s-monitor">
+  <div class="slide-header">
+    <div class="logo">
+      <div class="logo-mark">Rx</div>
+      <div><strong>Reactive Programming for EPICS Controls (C++)</strong></div>
+    </div>
+    <div class="slide-num">3 / 6</div>
+  </div>
+  <div class="slide-body">
+    <div class="section-strip">
+      <span class="section-num">Pattern 2</span>
+      <span class="section-title">Real-Time Monitor Stream Processing</span>
+      <span class="section-sub">Beyond raw PVXS monitor callbacks</span>
+    </div>
+    <div class="two-col">
+      <div class="panel">
+        <span class="label label-navy">The scenario</span>
+        <div class="scenario">
+          "Monitor <code>TEST:CALC</code> (10 Hz IOC push), compute a 5-sample
+          sliding average, write back only if it deviates more than 10% from the
+          last written value."
+        </div>
+        <span class="label label-orange">With today's tools…</span>
+        <ul class="bullet-list">
+          <li><strong>ctx.monitor(pv).event(callback).exec()</strong> — own ring buffer + write-guard variable</li>
+          <li class="pain"><strong>std::mutex</strong> on callback thread — manual serialisation every time</li>
+          <li class="pain">Cancellation: destroy the Monitor handle — easy to leak</li>
+        </ul>
+        <div class="verdict mt-auto">
+          EPICS C++ monitor code is callback spaghetti — same ring buffer and
+          mutex pattern repeated in every project, each slightly different.
+        </div>
+      </div>
+      <div class="panel">
+        <span class="label label-green">With Rx — monitor_pv + buffer + distinct_until_changed</span>
+        <div class="code-wrap" style="flex:1;">
+          <div class="code-label">C++17 · buffer(5,1) + distinct_until_changed</div>
+          <pre><code class="language-cpp">rxepics::monitor_pv&lt;double&gt;("TEST:CALC")
+
+  // sliding window — no deque, no index arithmetic
+  .buffer(5, 1)
+  .map([](const auto&amp; w) {
+    return std::accumulate(
+        w.begin(), w.end(), 0.0) / w.size();
+  })
+
+  // skip write if within 10% of last value
+  .distinct_until_changed(
+      [](double p, double c) {
+        return std::abs(c-p)/p &lt; 0.1; })
+
+  .flat_map([&amp;ctx](double avg) {
+    return rxepics::write_pv&lt;double&gt;(
+        "TEST:DOUBLE", avg, ctx); });</code></pre>
+        </div>
+        <div class="guarantee">
+          ✓ &nbsp;No ring buffer. No mutex. No write-guard variable.<br>
+          ✓ &nbsp;Dispose: PVXS Monitor handle destroyed — subscription cancelled.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ SLIDE 4 — PATTERN 3: ALARM FAN-IN ════════════ -->
+<div class="slide" id="s-merge">
+  <div class="slide-header">
+    <div class="logo">
+      <div class="logo-mark">Rx</div>
+      <div><strong>Reactive Programming for EPICS Controls (C++)</strong></div>
+    </div>
+    <div class="slide-num">4 / 6</div>
+  </div>
+  <div class="slide-body">
+    <div class="section-strip">
+      <span class="section-num">Pattern 3</span>
+      <span class="section-title">Alarm Fan-In</span>
+      <span class="section-sub">Beyond per-PV caMonitor registrations</span>
+    </div>
+    <div class="two-col">
+      <div class="panel">
+        <span class="label label-navy">The scenario</span>
+        <div class="scenario">
+          "Watch three PVs. When <strong>any one</strong> exceeds a threshold, notify
+          the operator immediately. The others must continue monitoring unaffected."
+        </div>
+        <span class="label label-orange">With today's tools…</span>
+        <ul class="bullet-list">
+          <li>One <strong>ctx.monitor(pv).event(cb).exec()</strong> per PV — three registrations</li>
+          <li class="pain">Shared alarm queue + <strong>std::mutex</strong> for fan-in — or a dedicated thread</li>
+          <li class="pain">No first-class PVXS primitive for merging subscriptions</li>
+        </ul>
+        <div class="verdict mt-auto">
+          Each additional PV is another registration, another callback,
+          another piece of shared state to protect.
+        </div>
+      </div>
+      <div class="panel">
+        <span class="label label-green">With Rx — rxcpp::observable&lt;&gt;::merge()</span>
+        <div class="code-wrap" style="flex:1;">
+          <div class="code-label">C++17 · observable&lt;&gt;::merge()</div>
+          <pre><code class="language-cpp">rxcpp::observable&lt;&gt;::merge(
+  rxepics::monitor_pv&lt;double&gt;("PV:ONE"),
+  rxepics::monitor_pv&lt;double&gt;("PV:TWO"),
+  rxepics::monitor_pv&lt;double&gt;("PV:THREE")
+)
+.filter([](double v) {
+  return std::abs(v) &gt; THRESHOLD; })
+.subscribe([](double v) {
+  notify_operator(v); });</code></pre>
+        </div>
+        <div class="guarantee">
+          ✓ &nbsp;Any one out-of-range PV fires — others continue.<br>
+          ✓ &nbsp;Add a fourth PV: one line.<br>
+          ✓ &nbsp;PVXS callbacks serialised by monitor's internal mutex — no data races.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ SLIDE 5 — ARCHITECTURE (data-flow) ══════════ -->
+<div class="slide" id="s-arch">
+  <div class="slide-header">
+    <div class="logo">
+      <div class="logo-mark">Rx</div>
+      <div><strong>Reactive Programming for EPICS Controls (C++)</strong></div>
+    </div>
+    <div class="slide-num">5 / 6</div>
+  </div>
+  <div class="slide-body">
+    <div class="section-strip">
+      <span class="section-num">Library</span>
+      <span class="section-title">RxEpics/cpp — Data Flow</span>
+      <span class="section-sub">reference implementation</span>
+    </div>
+    <div class="arch-body">
+
+      <div class="arch-flow">
+        <div class="af-node src">
+          <div class="af-left"><div class="af-dot"></div><div class="af-line"></div></div>
+          <div class="af-card">
+            <h4>EPICS IOC · PVXS Context</h4>
+            <p>Single-shot reads via <code>ctx.get(pv).exec()-&gt;wait()</code>;
+              writes via <code>ctx.put(pv).set("value",v).exec()</code>;
+              push via <code>ctx.monitor(pv).event(cb).exec()</code>.<br>
+              No commands — write to a command PV instead.</p>
+          </div>
+        </div>
+        <div class="af-node ops">
+          <div class="af-left"><div class="af-dot"></div><div class="af-line"></div></div>
+          <div class="af-card">
+            <h4>Reactive Observable (single-shot)</h4>
+            <p><code>read_pv&lt;T&gt;</code> · <code>write_pv&lt;T&gt;</code><br>
+              Dispatched on <code>std::thread</code>; emits one value then completes.
+              5 s timeout via <code>wait(5.0)</code>.</p>
+          </div>
+        </div>
+        <div class="af-node ops">
+          <div class="af-left"><div class="af-dot"></div><div class="af-line"></div></div>
+          <div class="af-card">
+            <h4>Reactive Observable (push)</h4>
+            <p><code>monitor_pv&lt;T&gt;</code> — PVXS monitor callback delivers values
+              to <code>rxcpp::subscriber&lt;T&gt;</code> via <code>shared_ptr&lt;mutex&gt;</code>.
+              Dispose destroys the Monitor handle → subscription cancelled.</p>
+          </div>
+        </div>
+        <div class="af-node ops">
+          <div class="af-left"><div class="af-dot"></div><div class="af-line"></div></div>
+          <div class="af-card">
+            <h4>RxCpp Operators</h4>
+            <p><code>flat_map</code> · <code>zip</code> · <code>merge</code> ·
+              <code>buffer</code> · <code>filter</code> · <code>scan</code> ·
+              <code>sample_with_time</code> · <code>distinct_until_changed</code></p>
+          </div>
+        </div>
+        <div class="af-node out">
+          <div class="af-left"><div class="af-dot"></div></div>
+          <div class="af-card">
+            <h4>Application / Downstream</h4>
+            <p>Write-back, alarm, HMI — pure functions, no shared state.<br>
+              First EPICS subproject in the suite with a ReactiveX conformance test.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="arch-example">
+        <div class="arch-ex-label">Showstopper pipeline</div>
+        <div class="arch-ex-title">Fluent EpicsClient chain</div>
+        <div class="arch-ex-desc">
+          Read → calibrate → write — all in one chain; no intermediate variables.
+        </div>
+        <div class="code-wrap" style="margin-top:.6rem;">
+          <div class="code-label">EpicsClient — fluent builder</div>
+          <pre><code class="language-cpp">rxepics::EpicsClient()
+  .read("TEST:CALC")
+  .map([](std::any v) -> std::any {
+    return std::any_cast&lt;double&gt;(v) * 1.0328;
+  })
+  .write("TEST:DOUBLE")
+  .subscribe(
+    [](std::any v) {
+      std::cout &lt;&lt; std::any_cast&lt;double&gt;(v);
+    });</code></pre>
+        </div>
+        <div class="arch-ex-desc" style="margin-top:.4rem;">
+          Header-only · CMake + FetchContent · C++17 · PVXS<br>
+          Verify: <code>EPICS_PVA_ADDR_LIST=localhost ./build/tests/verify_contract</code>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ SLIDE 6 — THANK YOU ═════════════════════════ -->
+<div class="slide" id="s-thanks">
+  <div class="slide-header">
+    <div class="logo">
+      <div class="logo-mark">Rx</div>
+      <div><strong>Reactive Programming for EPICS Controls (C++)</strong></div>
+    </div>
+    <div class="slide-num">6 / 6</div>
+  </div>
+  <div class="slide-body">
+    <div class="title-tag">Thank you</div>
+    <div class="title-main">
+      Same <em>ReactiveX</em> idioms.<br>Every system.
+    </div>
+    <div class="title-sub">
+      poll &nbsp;·&nbsp; zip &nbsp;·&nbsp; sliding average &nbsp;·&nbsp; backpressure &nbsp;·&nbsp; fluent pipelines
+    </div>
+    <div class="title-byline">
+      AGPL-3.0 · C++17 · CMake + FetchContent · RxCpp · PVXS
+    </div>
+    <div class="title-github">
+      <a href="https://github.com/scientific-software-hub/rx-controls-suite">
+        github.com/scientific-software-hub/rx-controls-suite
+      </a>
+    </div>
+    <div class="thanks-links">
+      <a class="thanks-link" href="../epics-talk/index.html">
+        <strong>Python edition</strong>
+        RxEpics/python · RxPY v4 · caproto
+      </a>
+      <a class="thanks-link" href="../rxtango-cpp-talk/index.html">
+        <strong>Tango C++ edition</strong>
+        RxTango/cpp · RxCpp · cppTango
+      </a>
+      <a class="thanks-link" href="../tango-talk/index.html">
+        <strong>Tango Java edition</strong>
+        RxTango/java · RxJava3 · jbang
+      </a>
+    </div>
+  </div>
+</div>
+
+</div><!-- #deck -->
+
+<div id="progress-bar"></div>
+<div id="nav-hint">← → Space · navigate slides</div>
+
+<script>
+  const slides = Array.from(document.querySelectorAll('.slide'));
+  let cur = 0;
+  const pb = document.getElementById('progress-bar');
+
+  function show(n) {
+    slides[cur].classList.remove('active');
+    cur = Math.max(0, Math.min(n, slides.length - 1));
+    slides[cur].classList.add('active');
+    pb.style.width = ((cur + 1) / slides.length * 100) + '%';
+  }
+
+  document.addEventListener('keydown', e => {
+    if (['ArrowRight','ArrowDown','Space',' '].includes(e.key)) { e.preventDefault(); show(cur+1); }
+    if (['ArrowLeft','ArrowUp'].includes(e.key)) { e.preventDefault(); show(cur-1); }
+  });
+  document.addEventListener('click', e => {
+    if (e.clientX > window.innerWidth / 2) show(cur+1); else show(cur-1);
+  });
+
+  show(0);
+  document.querySelectorAll('pre code').forEach(el => hljs.highlightElement(el));
+</script>
+</body>
+</html>
