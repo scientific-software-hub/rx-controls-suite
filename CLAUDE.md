@@ -13,8 +13,10 @@ rx-controls-suite/
   RxTango/
     java/       ← migrated from RxJTango (jbang, RxJava3, ezTangoAPI)
     python/     ← new (uv, RxPY v4, PyTango; unit-tested with mocked DeviceProxy)
+    cpp/        ← new (CMake + FetchContent, RxCpp, cppTango; header-only)
   RxEpics/
     python/     ← migrated from RxEpics (uv/pip, RxPY v4, caproto[asyncio])
+    cpp/        ← new (CMake + FetchContent, RxCpp, PVXS; header-only)
   RxTine/
     java/       ← new (jbang, RxJava3, TINE Java API)
   demo/
@@ -68,6 +70,37 @@ Wraps EPICS Channel Access with `Observable[T]` via `caproto[asyncio]` + `reacti
 
 **Key design:** `monitor_pv()` is the primary streaming primitive. No commands (EPICS has none — write to a PV instead). caproto returns numpy arrays; always take index `[0]` for scalars.
 
+### RxTango/cpp
+
+Wraps [cppTango](https://github.com/tango-controls/cppTango) (`Tango::DeviceProxy`) with `rxcpp::observable<T>` streams.
+
+**Build:** CMake 3.18+ with `FetchContent` for RxCpp; cppTango found via `pkg_check_modules(TANGO REQUIRED IMPORTED_TARGET tango)`. Header-only library — no compiled artifact. Run `cmake -S . -B build && cmake --build build`.
+
+**Function hierarchy (`include/rxtango/`, namespace `rxtango`):**
+- `read_attribute<T>(device, name)` → `observable<T>` — single-shot; `std::thread` + `DeviceProxy::read_attribute()`
+- `write_attribute<T>(device, name, value)` → `observable<T>` — re-emits written value
+- `execute_command<R,A>(device, cmd, argin=nullopt)` → `observable<R>` — optional argin
+- `monitor_attribute<T>(device, name, event)` → `observable<T>` — push; `detail::EventCallback<T>` inherits `Tango::CallBack`; dispose calls `unsubscribe_event()`
+- `TangoContext` — Meyers singleton caching `DeviceProxy` per device string; `std::mutex` protected
+- `TangoClient` — fluent builder over `observable<std::any>`; `read`, `monitor`, `write`, `execute`, `map`, `subscribe`
+
+**Key design:** Same single-shot + push split as Java/Python. `std::thread::detach()` dispatches blocking cppTango calls. `detail::EventCallback<T>` uses `std::mutex` to serialise cppTango's event callback thread. Conformance test (`tests/verify_contract.cpp`) verifies C1–C6 ReactiveX contract rules against live TangoTest.
+
+### RxEpics/cpp
+
+Wraps [PVXS](https://github.com/mdavidsaver/pvxs) (`pvxs::client::Context`) with `rxcpp::observable<T>` streams.
+
+**Build:** CMake 3.18+ with `FetchContent` for RxCpp; PVXS found via `find_package(PVXS)` with pkg-config fallback. Header-only library. Requires `EPICS_PVA_ADDR_LIST` env var.
+
+**Function hierarchy (`include/rxepics/`, namespace `rxepics`):**
+- `read_pv<T>(name, ctx)` → `observable<T>` — single-shot; `ctx.get(name).exec()->wait(5.0)` on detached thread; extracts `val["value"].as<T>()`
+- `write_pv<T>(name, value, ctx)` → `observable<T>` — re-emits written value
+- `monitor_pv<T>(name, ctx)` → `observable<T>` — push; `pvxs::client::Monitor` kept alive via `shared_ptr`; dispose destroys handle → subscription cancelled
+- `EpicsContext` — Meyers singleton wrapping `pvxs::client::Context::fromEnv()`; `default_context()` free function
+- `EpicsClient` — fluent builder (no `execute` — EPICS has no commands)
+
+**Key design:** No commands — write to a command PV instead. PVXS Monitor lifetime managed via `shared_ptr` in cleanup lambda. First EPICS subproject in the suite with a reactive conformance test.
+
 ### demo/reactive-query-cache
 
 Demonstrates an **app-level cache** built from the suite's own Rx primitives — conceptually a TanStack-Query `QueryClient`, implemented with `ReplaySubject` + ref-count + a gc grace timer.
@@ -86,8 +119,8 @@ Demonstrates an **app-level cache** built from the suite's own Rx primitives —
 
 ## Context & motivation
 
-- Talk planned: **"Reactive Programming in Tango"** at Tango Users Meeting
-- The suite demonstrates the same reactive idioms across Tango (Java) and EPICS (Python)
+- Talks planned at Tango Users Meeting (Java, Python, C++) and EPICS Collaboration Meeting (Python, C++)
+- The suite demonstrates the same reactive idioms across Tango (Java, Python, C++), EPICS (Python, C++), and TINE (Java)
 - Future: additional platforms (OPC-UA, DOOCS), additional languages
 
 ## License decision
@@ -108,7 +141,7 @@ on:
     paths: RxTango/java/**
 ```
 
-RxTango/java produces jbang catalog artifacts; RxEpics/python produces a wheel. Independent pipelines, no shared build infrastructure needed.
+RxTango/java produces jbang catalog artifacts; RxEpics/python produces a wheel; the C++ subprojects run CMake structure-validation (no cppTango/PVXS needed in CI). Independent pipelines, no shared build infrastructure needed.
 
 ## Naming conventions
 
