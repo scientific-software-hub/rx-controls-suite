@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Guarded Scan — Live Strip</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  /* Single-theme by design: a control-room instrument panel. */
+  :root {
+    --ground: #0A0F1A; --panel: #0F1626; --edge: #1D2942;
+    --ink: #E9EFF8; --muted: #93A0B6; --dim: #5D6B84;
+    --cyan: #1E97AC; --cyan-bright: #3ABBD1;
+    --warn: #D89A3A; --warn-mark: #BA7F20;
+    --good: #4FBE84; --good-mark: #33955D;
+    --bad: #D06557;
+    --mono: 'IBM Plex Mono', ui-monospace, 'Menlo', monospace;
+    --sans: 'IBM Plex Sans', 'Segoe UI', 'Helvetica Neue', sans-serif;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    background:
+      radial-gradient(1400px 800px at 80% -15%, #101B31 0%, transparent 60%),
+      var(--ground);
+    color: var(--ink); font-family: var(--sans);
+    display: grid; place-items: center; padding: 3vh 2vw;
+  }
+  .panel {
+    width: min(1720px, 97vw);
+    background:
+      repeating-linear-gradient(0deg, transparent 0 3px, rgba(233,239,248,0.014) 3px 4px),
+      var(--panel);
+    border: 1px solid var(--edge); border-radius: 12px;
+    padding: 22px 28px 16px;
+  }
+  header {
+    display: flex; justify-content: space-between; align-items: center;
+    border-bottom: 1px solid var(--edge); padding-bottom: 16px; margin-bottom: 10px;
+    gap: 16px; flex-wrap: wrap;
+  }
+  .tblock .eyebrow {
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.22em;
+    text-transform: uppercase; color: var(--cyan-bright); margin-bottom: 6px;
+  }
+  .tblock h1 {
+    font-family: var(--mono); font-size: 15px; font-weight: 500;
+    letter-spacing: 0.08em; text-transform: uppercase;
+  }
+  .chips { display: flex; gap: 10px; align-items: stretch; }
+  .chip {
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--muted);
+    border: 1px solid var(--edge); border-radius: 5px;
+    padding: 7px 13px; display: flex; align-items: center; gap: 8px;
+    min-width: 96px; justify-content: center;
+  }
+  .chip .v { color: var(--ink); font-variant-numeric: tabular-nums; }
+  .chip .big { font-size: 17px; font-weight: 600; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--dim); flex: none; }
+  .chip[data-state="running"]   { border-color: var(--good-mark); color: var(--good); }
+  .chip[data-state="running"]  .dot { background: var(--good); animation: pulse 1.6s infinite; }
+  .chip[data-state="suspended"] { border-color: var(--warn-mark); color: var(--warn); }
+  .chip[data-state="suspended"] .dot { background: var(--warn); animation: pulse 0.9s infinite; }
+  .chip[data-state="aborted"]   { border-color: var(--bad); color: var(--bad); }
+  .chip[data-state="aborted"]  .dot { background: var(--bad); }
+  .chip[data-state="done"]      { border-color: var(--cyan); color: var(--cyan-bright); }
+  .chip[data-state="done"]     .dot { background: var(--cyan-bright); }
+  @keyframes pulse { 50% { opacity: 0.25; } }
+  @media (prefers-reduced-motion: reduce) { .dot { animation: none !important; } }
+  svg { display: block; width: 100%; height: auto; }
+  svg text { font-family: var(--mono); }
+  .grid  { stroke: #1D2942; stroke-width: 1; }
+  .tk    { font-size: 11px; fill: var(--dim); }
+  .lbl   { font-size: 11.5px; fill: var(--muted); letter-spacing: 0.06em; }
+  .ann   { font-size: 12px; fill: var(--muted); }
+  .ann.warn { fill: var(--warn); }
+  .ann.good { fill: var(--good); }
+  footer {
+    display: flex; justify-content: space-between; align-items: baseline;
+    border-top: 1px solid var(--edge); padding-top: 12px; margin-top: 6px;
+    font-family: var(--mono); font-size: 11px; color: var(--dim);
+    gap: 12px; flex-wrap: wrap;
+  }
+  footer .v { color: var(--muted); font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+<div class="panel">
+  <header>
+    <div class="tblock">
+      <div class="eyebrow">rx-controls-suite&ensp;&#10005;&ensp;bluesky</div>
+      <h1>Guarded tomography scan &mdash; live</h1>
+    </div>
+    <div class="chips">
+      <div class="chip" id="chip-state"><span class="dot"></span><span id="state-txt">connecting</span></div>
+      <div class="chip">shutter&ensp;<span class="v" id="shutter-txt">&mdash;</span></div>
+      <div class="chip">frame&ensp;<span class="v" id="frame-txt">&mdash;</span></div>
+      <div class="chip"><span class="v big" id="ma-txt">&mdash;</span>&ensp;mA</div>
+    </div>
+  </header>
+
+  <svg id="strip" viewBox="0 0 1440 440" aria-label="Live strip chart: beam current, suspension bands, event documents">
+    <g id="g-grid"></g>
+    <g id="g-bands"></g>
+    <line id="gate" class="grid" stroke="#8A97AD" stroke-width="1" stroke-dasharray="5 4" opacity="0.6"/>
+    <text id="gate-lbl" class="tk" text-anchor="end"></text>
+    <path id="area" fill="#1E97AC" opacity="0.10"/>
+    <path id="line" fill="none" stroke="#1E97AC" stroke-width="2.5" stroke-linejoin="round"/>
+    <g id="g-ann"></g>
+    <rect x="70" y="42" width="9" height="9" rx="2" fill="#1E97AC"/>
+    <text x="86" y="50" class="lbl">BeamCurrent &mdash; Tango sr/demo/controller</text>
+    <rect x="70" y="330" width="9" height="9" rx="2" fill="#DCE5F2"/>
+    <text x="86" y="338" class="lbl">Event documents &mdash; Bluesky RunEngine</text>
+    <g id="g-events"></g>
+    <line x1="70" y1="404" x2="1400" y2="404" class="grid"/>
+    <g id="g-axis"></g>
+  </svg>
+
+  <footer>
+    <span>suspender: SuspendBoolLow(RxSignal(beam_ok)) &middot; gate <span class="v" id="gate-txt"></span> mA</span>
+    <span>tango sr/demo/* &nbsp;&#215;&nbsp; epics TOMO:* &nbsp;&middot;&nbsp;
+          frames &rarr; HDF5 <span class="v" id="ev-txt">0</span> &nbsp;&middot;&nbsp;
+          angle <span class="v" id="ang-txt">&mdash;</span>&deg; &nbsp;&middot;&nbsp;
+          counts <span class="v" id="cnt-txt">&mdash;</span></span>
+  </footer>
+</div>
+
+<script>
+(() => {
+  const X0 = 70, X1 = 1400, YB = 296, YT = 60;         // trace lane
+  const EV_Y = 348, EV_H = 24;                          // event lane
+  const MAX_MA = 270;
+  const $ = id => document.getElementById(id);
+  const svgNS = "http://www.w3.org/2000/svg";
+
+  function el(tag, attrs, text) {
+    const n = document.createElementNS(svgNS, tag);
+    for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
+    if (text != null) n.textContent = text;
+    return n;
+  }
+  const hhmmss = t => new Date(t * 1000).toTimeString().slice(0, 8);
+
+  // static grid
+  const grid = $("g-grid");
+  for (const mA of [60, 120, 180, 240]) {
+    const y = YB - mA / MAX_MA * (YB - YT);
+    grid.append(el("line", {x1: X0, y1: y, x2: X1, y2: y, class: "grid"}));
+    grid.append(el("text", {x: X0 - 10, y: y + 4, "text-anchor": "end", class: "tk"},
+                   mA === 240 ? "240 mA" : String(mA)));
+  }
+
+  const STATES = {0: ["idle", ""], 1: ["running", "running"],
+                  2: ["scan done", "done"], 3: ["aborted", "aborted"]};
+
+  async function tick() {
+    let s;
+    try { s = await (await fetch("/state")).json(); }
+    catch { $("state-txt").textContent = "connecting"; return; }
+    if (s.stale) { $("state-txt").textContent = "connecting"; return; }
+
+    const W = s.window_s, now = s.now;
+    const X = t => X1 - (now - t) * (X1 - X0) / W;
+    const Y = v => YB - Math.min(v, MAX_MA) / MAX_MA * (YB - YT);
+
+    // header chips
+    const suspended = s.scan_status === 1 && s.current < s.gate;
+    let [label, state] = STATES[s.scan_status] || ["idle", ""];
+    if (suspended) [label, state] = ["suspended", "suspended"];
+    $("state-txt").textContent = label;
+    $("chip-state").dataset.state = state;
+    $("shutter-txt").textContent = s.shutter ? "open" : "closed";
+    $("frame-txt").textContent =
+      s.cur_proj >= 0 && s.scan_status && s.proj_valid ? String(s.cur_proj + 1) : "—";
+    $("ma-txt").textContent = s.current.toFixed(1);
+    $("gate-txt").textContent = s.gate.toFixed(0);
+    $("ev-txt").textContent = s.events_total;
+    $("ang-txt").textContent = s.cur_angle.toFixed(1);
+    $("cnt-txt").textContent = s.counts;
+
+    // gate line
+    const gy = Y(s.gate);
+    const gate = $("gate");
+    gate.setAttribute("x1", X0); gate.setAttribute("x2", X1);
+    gate.setAttribute("y1", gy); gate.setAttribute("y2", gy);
+    const gl = $("gate-lbl");
+    gl.setAttribute("x", X1 - 6); gl.setAttribute("y", gy - 8);
+    gl.textContent = s.gate.toFixed(0) + " mA gate";
+
+    // trace
+    const pts = s.samples.filter(p => p[0] >= now - W);
+    if (pts.length > 1) {
+      const d = "M" + pts.map(p => X(p[0]).toFixed(1) + "," + Y(p[1]).toFixed(1)).join(" L");
+      $("line").setAttribute("d", d);
+      $("area").setAttribute("d",
+        d + ` L${X(pts[pts.length-1][0]).toFixed(1)},${YB} L${X(pts[0][0]).toFixed(1)},${YB} Z`);
+    }
+
+    // suspension bands + annotations
+    const bands = $("g-bands"), ann = $("g-ann");
+    bands.replaceChildren(); ann.replaceChildren();
+    for (const b of s.bands) {
+      const sx = Math.max(X(b.start), X0), ex = b.end ? X(b.end) : X1;
+      if (ex <= X0) continue;
+      bands.append(el("rect", {x: sx, y: 34, width: Math.max(ex - sx, 2), height: 344,
+                               fill: "#BA7F20", opacity: 0.14}));
+      if (X(b.start) >= X0)
+        bands.append(el("line", {x1: sx, y1: 34, x2: sx, y2: 378,
+                                 stroke: "#BA7F20", "stroke-width": 1, opacity: 0.55}));
+      if (b.end)
+        bands.append(el("line", {x1: ex, y1: 34, x2: ex, y2: 378,
+                                 stroke: "#33955D", "stroke-width": 1, opacity: 0.55}));
+      if (ex - sx > 130) {
+        ann.append(el("text", {x: sx + 10, y: 92,  class: "ann warn"}, hhmmss(b.start)));
+        ann.append(el("text", {x: sx + 10, y: 110, class: "ann warn"}, "suspending…"));
+        ann.append(el("text", {x: sx + 10, y: 131, class: "ann"}, "beam_ok is low"));
+        ann.append(el("text", {x: sx + 10, y: 149, class: "ann"}, "shutter closed"));
+      }
+      if (b.end && X1 - ex > 150) {
+        ann.append(el("text", {x: ex + 12, y: 92,  class: "ann good"}, hhmmss(b.end) + " released"));
+        ann.append(el("text", {x: ex + 12, y: 110, class: "ann"}, "step re-taken"));
+      }
+    }
+    if (s.aborted_at && X(s.aborted_at) > X0) {
+      const ax = X(s.aborted_at);
+      ann.append(el("line", {x1: ax, y1: 34, x2: ax, y2: 378,
+                             stroke: "#D06557", "stroke-width": 1.5, opacity: 0.8}));
+      if (X1 - ax > 130)
+        ann.append(el("text", {x: ax + 10, y: 92, class: "ann", fill: "#D06557"},
+                      hhmmss(s.aborted_at) + " aborted"));
+    }
+
+    // event ticks
+    const ev = $("g-events");
+    ev.replaceChildren();
+    const vis = s.events.filter(e => e.t >= now - W);
+    for (const e of vis) {
+      const x = X(e.t);
+      ev.append(el("rect", {x: x - 2.5, y: EV_Y, width: 5, height: EV_H,
+                            rx: 1.5, fill: "#DCE5F2"}));
+    }
+    // stable labels: frame numbers 1, 5, 10, 15… — no flicker as ticks scroll
+    for (const e of vis) {
+      const n = e.proj + 1;
+      if (n === 1 || n % 5 === 0)
+        ev.append(el("text", {x: X(e.t), y: EV_Y + EV_H + 16, "text-anchor": "middle",
+                              class: "tk"}, String(n)));
+    }
+
+    // wall-clock axis: a label every 10 s
+    const axis = $("g-axis");
+    axis.replaceChildren();
+    const first = Math.ceil((now - W) / 10) * 10;
+    for (let t = first; t <= now; t += 10) {
+      const x = X(t);
+      if (x < X0 + 24 || x > X1 - 24) continue;
+      axis.append(el("line", {x1: x, y1: 404, x2: x, y2: 409, class: "grid"}));
+      axis.append(el("text", {x, y: 426, "text-anchor": "middle", class: "tk"}, hhmmss(t)));
+    }
+  }
+
+  tick();
+  setInterval(tick, 200);
+})();
+</script>
+</body>
+</html>

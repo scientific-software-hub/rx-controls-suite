@@ -21,6 +21,7 @@ rx-controls-suite/
     java/       ← new (jbang, RxJava3, TINE Java API)
   demo/
     synchrotron-beamline/   ← combined demo: Tango ring + EPICS beamline, 4 reactive patterns
+      bluesky/              ← same scan under a Bluesky RunEngine; rx↔Bluesky bridge (RxStatus/RxSignal/rx_wait/documents)
     reactive-query-cache/   ← app-level Rx cache demo: QueryCache dedup across UI components
   (RxEpics/java, RxTine/python — future)
 ```
@@ -100,6 +101,44 @@ Wraps [PVXS](https://github.com/mdavidsaver/pvxs) (`pvxs::client::Context`) with
 - `EpicsClient` — fluent builder (no `execute` — EPICS has no commands)
 
 **Key design:** No commands — write to a command PV instead. PVXS Monitor lifetime managed via `shared_ptr` in cleanup lambda. First EPICS subproject in the suite with a reactive conformance test.
+
+### demo/synchrotron-beamline/bluesky
+
+The guarded tomography scan re-orchestrated by a **Bluesky RunEngine**, positioning
+the suite as Bluesky's cross-control-system composition layer (Bluesky/ophyd is
+EPICS-native; the Tango ring is invisible to it without rx).
+
+**Files:**
+- `rx_bluesky.py` — the whole bridge in four adapters: `RxLoop` (dedicated asyncio
+  loop thread for rx subscriptions — rxepics/rxtango require a running loop),
+  `RxStatus` (Observable → Bluesky Status), `RxSignal` (Observable → ophyd-Signal
+  shim for suspenders), `rx_wait` (Observable → blocking read), `documents`
+  (RunEngine → Observable of `(name, doc)`)
+- `devices.py` — Bluesky-protocol devices (Readable/Movable/Triggerable) implemented
+  directly on rxepics/rxtango pipelines; no ophyd, no pyepics. `RingHealth` puts
+  Tango state + derived `quality_ok` into every Event document
+- `guarded_scan_bluesky.py` — `bp.scan` with beam-loss handled by
+  `SuspendBoolLow(RxSignal(beam_ok))`, interlock abort via `RE.request_pause()` →
+  `RE.abort()`, and the document stream fanned back into rx (HDF5 raw / display sampled)
+
+**Key design:** two event loops (RunEngine's + `RxLoop`'s) bridged exclusively with
+`call_soon_threadsafe`; suspender callbacks fan out on a worker thread so the rx loop
+stays free for device reads. Scan-state PVs are mirrored from documents, so
+`live_dashboard.py` tracks Bluesky scans unchanged. BLISS mapping documented as a
+design sketch in `bluesky/README.md` (BLISS needs its Beacon+Redis stack — not
+reducible to this docker demo).
+
+**Known gotchas (hard-won, do not rediscover):**
+- **caproto + uvloop = silent CA search failure.** Under `uvicorn[standard]`,
+  uvloop becomes the default loop and caproto's UDP name search never resolves —
+  every PV hangs in `(searching....)` until a `CaprotoTimeoutError`, with correct
+  `EPICS_CA_*` env. TCP is unaffected, so it looks like a network problem. Fix:
+  `uvicorn.run(..., loop="asyncio")` (see `bluesky/live_strip.py`).
+- **Tango "Device not exported" after a docker stack restart.** If the Tango DB
+  containers restart while `storage-ring-sim-server` keeps running, *new* clients
+  fail with `API_DeviceNotExported` while processes holding cached `DeviceProxy`
+  connections keep reading happily — the contradiction is the tell. Fix:
+  `docker restart storage-ring-sim-server` so it re-registers with the DB.
 
 ### demo/reactive-query-cache
 

@@ -73,6 +73,7 @@ python inject_fault.py vacuum_burst   # emergency abort
 | `inject_fault.py <scenario>` | Set ring scenario: `nominal \| orbit_drift \| vacuum_burst \| beam_loss` |
 | `guarded_scan.py` ★ | **Hero** — full guarded tomography scan fusing Tango + EPICS |
 | `live_dashboard.py` | **Animated web dashboard** — SVG ring + beamline, auto-refreshed at 1 Hz |
+| `bluesky/guarded_scan_bluesky.py` | **Bluesky integration** — same guarded scan, orchestrated by a Bluesky RunEngine; the rx health stream drives a Bluesky suspender, Tango state lands in Event documents ([details](bluesky/README.md)) |
 
 ## Live dashboard
 
