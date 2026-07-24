@@ -1,0 +1,823 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EPICS Primer · SLAC Interview Prep</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#080A0F;
+  --s1:#0F1219;
+  --s2:#161B26;
+  --s3:#1C2233;
+  --bd:#1F2636;
+  --bd2:#2A3348;
+  --tx:#D8E2F0;
+  --tm:#62728A;
+  --tf:#303D55;
+  --blue:#4F92E8;
+  --blue-bg:rgba(79,146,232,.11);
+  --teal:#28B8B0;
+  --teal-bg:rgba(40,184,176,.10);
+  --amber:#D08C38;
+  --amber-bg:rgba(208,140,56,.11);
+  --purple:#A060D8;
+  --purple-bg:rgba(160,96,216,.11);
+  --green:#38B86A;
+  --green-bg:rgba(56,184,106,.10);
+  --red:#D85060;
+  --red-bg:rgba(216,80,96,.10);
+  --sidebar:228px;
+  --font:'Inter',system-ui,sans-serif;
+  --grotesk:'Space Grotesk',sans-serif;
+  --mono:'JetBrains Mono','Fira Code',monospace;
+}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--tx);font-family:var(--font);font-size:15px;line-height:1.7}
+
+/* ─── SIDEBAR ─── */
+.sidebar{position:fixed;top:0;left:0;width:var(--sidebar);height:100vh;background:var(--s1);border-right:1px solid var(--bd);display:flex;flex-direction:column;padding:24px 0;overflow-y:auto;z-index:100}
+.sb-top{padding:0 18px 20px;border-bottom:1px solid var(--bd);margin-bottom:14px}
+.sb-eyebrow{font-family:var(--mono);font-size:8.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--tm);display:block;margin-bottom:5px}
+.sb-title{font-family:var(--grotesk);font-size:14px;font-weight:700;color:var(--tx);line-height:1.3}
+.sb-back{display:block;margin-top:8px;font-size:11px;color:var(--blue);text-decoration:none;font-family:var(--mono)}
+.sb-back:hover{text-decoration:underline}
+.nav-lbl{font-family:var(--mono);font-size:8px;letter-spacing:.1em;text-transform:uppercase;color:var(--tf);padding:0 18px;margin:12px 0 4px;display:block}
+.nv{display:flex;align-items:center;gap:8px;padding:6px 18px;text-decoration:none;color:var(--tm);font-size:12px;font-weight:500;transition:color .15s,background .15s}
+.nv:hover{color:var(--tx);background:var(--s2)}
+.nv.active{background:var(--s3);color:var(--blue)}
+.nv .nd{width:5px;height:5px;border-radius:50%;background:var(--tf);flex-shrink:0;transition:background .15s}
+.nv.active .nd{background:var(--blue)}
+
+/* ─── MAIN ─── */
+.main{margin-left:var(--sidebar);padding:52px 64px 100px;max-width:calc(var(--sidebar) + 880px)}
+
+/* ─── HERO ─── */
+.hero{margin-bottom:60px;padding-bottom:40px;border-bottom:1px solid var(--bd)}
+.hero-eyebrow{font-family:var(--mono);font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--teal);margin-bottom:14px}
+.hero-title{font-family:var(--grotesk);font-size:36px;font-weight:700;line-height:1.1;letter-spacing:-.02em;margin-bottom:12px}
+.hero-sub{font-size:16px;color:var(--tm);max-width:58ch;line-height:1.7;margin-bottom:28px}
+/* Terminal */
+.terminal{background:#000308;border:1px solid var(--bd2);border-radius:10px;overflow:hidden;max-width:600px}
+.term-bar{background:#141820;padding:10px 14px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--bd)}
+.dot{width:11px;height:11px;border-radius:50%}
+.dot-r{background:#E05060}.dot-y{background:#D09030}.dot-g{background:#30A050}
+.term-label{font-family:var(--mono);font-size:10px;color:var(--tf);margin-left:6px}
+.term-body{padding:16px 18px;font-family:var(--mono);font-size:12.5px;line-height:1.9}
+.tl-prompt{color:var(--green)}
+.tl-cmd{color:var(--tx)}
+.tl-pv{color:var(--amber)}
+.tl-ts{color:var(--tm)}
+.tl-val{color:var(--teal)}
+.tl-unit{color:var(--tf)}
+.tl-row{opacity:0;animation:faderow .3s forwards}
+.tl-row:nth-child(1){animation-delay:.2s}
+.tl-row:nth-child(2){animation-delay:.6s}
+.tl-row:nth-child(3){animation-delay:1.1s}
+.tl-row:nth-child(4){animation-delay:1.7s}
+.tl-row:nth-child(5){animation-delay:2.4s}
+.tl-row:nth-child(6){animation-delay:3.1s}
+.tl-row:nth-child(7){animation-delay:3.9s}
+@keyframes faderow{to{opacity:1}}
+
+/* ─── SECTIONS ─── */
+.sec{margin-bottom:64px;scroll-margin-top:28px}
+.sec-hdr{display:flex;align-items:baseline;gap:12px;margin-bottom:24px;padding-bottom:10px;border-bottom:1px solid var(--bd)}
+.sec-id{font-family:var(--mono);font-size:9px;color:var(--tf);flex-shrink:0}
+.sec-ttl{font-family:var(--grotesk);font-size:20px;font-weight:700;letter-spacing:-.01em}
+.badge{font-family:var(--mono);font-size:8px;letter-spacing:.12em;text-transform:uppercase;padding:3px 7px;border-radius:4px;flex-shrink:0;cursor:default}
+.b-kc{background:var(--purple-bg);color:var(--purple);border:1px solid rgba(160,96,216,.3)} /* know cold */
+.b-slac{background:var(--amber-bg);color:var(--amber);border:1px solid rgba(208,140,56,.3)}
+.b-ref{background:var(--s2);color:var(--tm);border:1px solid var(--bd)}
+
+/* Prose */
+.prose p{margin-bottom:15px;line-height:1.75}
+.prose p:last-child{margin-bottom:0}
+.prose strong{font-weight:600;color:var(--tx)}
+
+/* ─── CALLOUT BOXES ─── */
+.box{border-radius:8px;padding:16px 18px;margin:20px 0}
+.box .bx-lbl{font-family:var(--mono);font-size:9px;letter-spacing:.14em;text-transform:uppercase;margin-bottom:10px}
+.box p{font-size:13.5px;line-height:1.65;color:var(--tm)}
+.box p+p{margin-top:8px}
+.box p strong{color:var(--tx);font-weight:600}
+.box-tango{background:var(--teal-bg);border:1px solid rgba(40,184,176,.25)}
+.box-tango .bx-lbl{color:var(--teal)}
+.box-slac{background:var(--amber-bg);border:1px solid rgba(208,140,56,.25)}
+.box-slac .bx-lbl{color:var(--amber)}
+.box-note{background:var(--s2);border:1px solid var(--bd)}
+.box-note .bx-lbl{color:var(--tm)}
+.box-warn{background:var(--red-bg);border:1px solid rgba(216,80,96,.25)}
+.box-warn .bx-lbl{color:var(--red)}
+
+/* ─── CODE BLOCKS ─── */
+.code-block{background:#000308;border:1px solid var(--bd2);border-radius:8px;overflow:hidden;margin:18px 0;font-family:var(--mono);font-size:12.5px}
+.code-hdr{background:#0D1018;border-bottom:1px solid var(--bd);padding:8px 14px;display:flex;align-items:center;gap:10px}
+.code-lang{font-family:var(--mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--tf)}
+.code-desc{font-size:11px;color:var(--tm);flex:1}
+.code-body{padding:16px 18px;line-height:1.85;overflow-x:auto;white-space:pre}
+/* Syntax colors */
+.kw{color:var(--blue)}         /* keywords */
+.pv{color:var(--amber)}        /* PV names / record names */
+.st{color:var(--green)}        /* strings / values */
+.cm{color:var(--tf)}           /* comments */
+.fd{color:#9878C8}             /* field names / record fields */
+.fn{color:var(--teal)}         /* function names */
+.nm{color:#D0A060}             /* numbers */
+.op{color:var(--tx)}           /* operators / parens */
+
+/* ─── RECORD TYPE TABLE ─── */
+.rec-table{width:100%;border-collapse:collapse;margin:18px 0;font-size:13.5px}
+.rec-table th{font-family:var(--mono);font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:var(--tm);font-weight:500;padding:8px 12px;text-align:left;border-bottom:1px solid var(--bd2)}
+.rec-table td{padding:9px 12px;border-bottom:1px solid var(--bd);vertical-align:top}
+.rec-table tr:last-child td{border-bottom:none}
+.rn{font-family:var(--mono);color:var(--amber);font-size:12px}
+.rimp{font-family:var(--mono);font-size:8px;letter-spacing:.08em;text-transform:uppercase;padding:2px 6px;border-radius:3px}
+.rimp-ess{background:rgba(216,80,96,.12);color:var(--red)}
+.rimp-com{background:rgba(79,146,232,.10);color:var(--blue)}
+
+/* ─── COMMAND REFERENCE ─── */
+.cmd-grid{display:flex;flex-direction:column;gap:10px;margin:18px 0}
+.cmd-card{background:var(--s1);border:1px solid var(--bd);border-radius:7px;padding:14px 16px}
+.cmd-line{font-family:var(--mono);font-size:13px;color:var(--tx);margin-bottom:6px}
+.cmd-desc{font-size:13px;color:var(--tm);line-height:1.6}
+.cmd-desc strong{color:var(--tx)}
+
+/* ─── TRANSLATION TABLE ─── */
+.xref-table{width:100%;border-collapse:collapse;margin:18px 0;font-size:13px}
+.xref-table th{font-family:var(--mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;padding:9px 14px;text-align:left;background:var(--s2)}
+.xref-table th:first-child{color:var(--teal);border-radius:6px 0 0 0}
+.xref-table th:last-child{color:var(--amber);border-radius:0 6px 0 0}
+.xref-table td{padding:9px 14px;border-bottom:1px solid var(--bd);vertical-align:top;line-height:1.5}
+.xref-table tr:last-child td{border-bottom:none}
+.xc-t{font-family:var(--mono);font-size:12px;color:var(--teal)}
+.xc-e{font-family:var(--mono);font-size:12px;color:var(--amber)}
+.xc-note{font-size:12px;color:var(--tm);grid-column:span 2;font-style:italic}
+
+/* ─── FAILURE MODE CARDS ─── */
+.fail-card{background:var(--s1);border:1px solid var(--bd);border-left:3px solid var(--red);border-radius:7px;padding:16px 18px;margin-bottom:12px}
+.fail-title{font-weight:600;font-size:14px;margin-bottom:8px}
+.fail-sym{font-size:12.5px;color:var(--tm);margin-bottom:6px}
+.fail-sym span{font-family:var(--mono);color:var(--red);font-size:12px}
+.fail-fix{font-size:13px;color:var(--tm);line-height:1.65}
+.fail-fix strong{color:var(--tx)}
+.fail-cmd{font-family:var(--mono);font-size:11.5px;background:var(--s3);padding:2px 7px;border-radius:3px;color:var(--amber)}
+
+/* ─── SUBSECTION TITLES ─── */
+h3{font-family:var(--grotesk);font-size:16px;font-weight:600;margin:28px 0 10px;color:var(--tx)}
+h3:first-child{margin-top:0}
+
+/* ─── INLINE CODE ─── */
+code{font-family:var(--mono);font-size:12px;background:var(--s3);color:var(--blue);padding:2px 6px;border-radius:3px}
+
+/* ─── RESPONSIVE ─── */
+@media(max-width:768px){.sidebar{display:none}.main{margin-left:0;padding:28px 20px}}
+</style>
+</head>
+<body>
+
+<aside class="sidebar">
+  <div class="sb-top">
+    <span class="sb-eyebrow">SLAC Interview Prep</span>
+    <div class="sb-title">EPICS Primer</div>
+    <a href="SLAC_prep_guide.html" class="sb-back">← back to prep guide</a>
+  </div>
+  <span class="nav-lbl">Foundations</span>
+  <a href="#mental-model" class="nv active"><span class="nd"></span>Mental model</a>
+  <a href="#ioc"          class="nv"><span class="nd"></span>The IOC</a>
+  <a href="#pvs"          class="nv"><span class="nd"></span>Process Variables</a>
+  <a href="#record-types" class="nv"><span class="nd"></span>Record type reference</a>
+  <span class="nav-lbl">Protocols</span>
+  <a href="#ca"           class="nv"><span class="nd"></span>Channel Access</a>
+  <a href="#pva"          class="nv"><span class="nd"></span>PV Access</a>
+  <span class="nav-lbl">Tooling</span>
+  <a href="#python"       class="nv"><span class="nd"></span>Python interfaces</a>
+  <a href="#pydm"         class="nv"><span class="nd"></span>PyDM &amp; SLAC GUI stack</a>
+  <a href="#diag"         class="nv"><span class="nd"></span>Diagnostic toolkit</a>
+  <span class="nav-lbl">Troubleshooting</span>
+  <a href="#failures"     class="nv"><span class="nd"></span>Failure modes</a>
+  <a href="#tango-map"    class="nv"><span class="nd"></span>Tango → EPICS map</a>
+</aside>
+
+<main class="main">
+
+<!-- HERO -->
+<div class="hero">
+  <div class="hero-eyebrow">EPICS · Experimental Physics and Industrial Control System</div>
+  <h1 class="hero-title">From zero to credible<br>in two hours</h1>
+  <p class="hero-sub">A working reference for an engineer who knows Tango deeply and needs to speak EPICS vocabulary before a technical interview at SLAC. Every concept maps to something you already know.</p>
+  <div class="terminal">
+    <div class="term-bar">
+      <div class="dot dot-r"></div><div class="dot dot-y"></div><div class="dot dot-g"></div>
+      <span class="term-label">CA monitor — this is what EPICS looks like in daily use</span>
+    </div>
+    <div class="term-body">
+      <div class="tl-row"><span class="tl-prompt">$</span> <span class="tl-cmd">camonitor</span> <span class="tl-pv">LCLS:GAS:PRES1</span></div>
+      <div class="tl-row"><span class="tl-pv">LCLS:GAS:PRES1</span>  <span class="tl-ts">2026-07-24 09:12:01.234</span>  <span class="tl-val">8.73e-07</span> <span class="tl-unit">torr</span></div>
+      <div class="tl-row"><span class="tl-pv">LCLS:GAS:PRES1</span>  <span class="tl-ts">2026-07-24 09:12:02.891</span>  <span class="tl-val">8.71e-07</span> <span class="tl-unit">torr</span></div>
+      <div class="tl-row"><span class="tl-pv">LCLS:GAS:PRES1</span>  <span class="tl-ts">2026-07-24 09:12:04.556</span>  <span class="tl-val">8.69e-07</span> <span class="tl-unit">torr</span></div>
+      <div class="tl-row"><span class="tl-pv">LCLS:GAS:PRES1</span>  <span class="tl-ts">2026-07-24 09:12:06.112</span>  <span class="tl-val">8.75e-07</span> <span class="tl-unit">torr</span></div>
+      <div class="tl-row"><span class="tl-pv">LCLS:GAS:PRES1</span>  <span class="tl-ts">2026-07-24 09:12:07.789</span>  <span class="tl-val">8.72e-07</span> <span class="tl-unit">torr</span></div>
+      <div class="tl-row"><span class="tl-prompt">^C</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ── MENTAL MODEL ── -->
+<section class="sec" id="mental-model">
+  <div class="sec-hdr">
+    <span class="sec-id">00</span>
+    <h2 class="sec-ttl">The Mental Model</h2>
+    <span class="badge b-kc">Know Cold</span>
+  </div>
+  <div class="prose">
+    <p>EPICS is a toolkit for building distributed control systems. It solves the same problem as Tango: making hardware on a beamline — motors, detectors, valves, power supplies — addressable by software running anywhere on the network. The fundamental data abstraction is the <strong>Process Variable (PV)</strong>. Everything in EPICS is a named PV. You read it, write it, or subscribe to changes on it. That is the entire client-facing API.</p>
+    <p>The PV lives inside an <strong>IOC</strong> (Input/Output Controller). The IOC is a software process — running on a VME crate, an embedded Linux box, or a regular server — that owns a set of PVs and knows how to talk to the underlying hardware. Clients connect to IOCs using the <strong>Channel Access (CA)</strong> protocol, which is UDP for discovery and TCP for data. A newer protocol, <strong>PV Access (PVA)</strong>, extends this with structured data types needed for detector images and complex scientific data.</p>
+    <p>One sentence summary to say out loud: <em>"EPICS is a publish-subscribe control system where hardware state is exposed as named Process Variables served by IOCs over Channel Access, and any network client can read, write, or monitor those variables in real time."</em></p>
+  </div>
+  <div class="box box-tango">
+    <div class="bx-lbl">Tango Parallel</div>
+    <p>The EPICS IOC ≈ Tango DeviceServer. The Process Variable ≈ Tango Attribute. Channel Access ≈ the ZMQ/CORBA transport layer. EPICS_CA_ADDR_LIST ≈ TANGO_HOST — both are the mechanism for clients to find servers. The biggest conceptual difference: Tango organizes state into Devices with attributes and commands; EPICS is flatter — everything is a PV, and "devices" are just naming conventions for groups of PVs.</p>
+  </div>
+</section>
+
+<!-- ── THE IOC ── -->
+<section class="sec" id="ioc">
+  <div class="sec-hdr">
+    <span class="sec-id">01</span>
+    <h2 class="sec-ttl">The IOC</h2>
+    <span class="badge b-kc">Know Cold</span>
+  </div>
+  <div class="prose">
+    <p>The IOC is the server in EPICS. It runs a real-time database of records (each record is a PV), handles hardware I/O through device support modules, and serves PV values to clients over CA. Two flavors exist: a <strong>hard IOC</strong> runs on dedicated hardware (VME crates, embedded systems), and a <strong>soft IOC</strong> runs on any Linux server without physical I/O — often used for simulations, software-only PVs, or testing. At LCLS both are in use.</p>
+    <p>An IOC is defined by two artifacts: the <strong>startup script</strong> (<code>st.cmd</code>) and the <strong>database files</strong> (<code>.db</code>). The startup script boots the IOC shell, loads device drivers, and loads the record database. The database files define the PVs — their names, types, scan rates, alarm thresholds, and hardware addresses.</p>
+  </div>
+
+  <h3>Startup Script Anatomy — st.cmd</h3>
+  <div class="code-block">
+    <div class="code-hdr"><span class="code-lang">EPICS st.cmd</span><span class="code-desc">Soft IOC startup — the sequence IOC operators read every day</span></div>
+    <div class="code-body"><span class="cm">#!../../bin/linux-x86_64/softIoc</span>
+<span class="cm"># 1. Environment</span>
+<span class="kw">&lt;</span> envPaths
+<span class="kw">epicsEnvSet</span>(<span class="st">"DEVICE"</span>, <span class="st">"LCLS:GAS"</span>)
+<span class="kw">epicsEnvSet</span>(<span class="st">"TOP"</span>,    <span class="st">"/path/to/ioc"</span>)
+
+<span class="cm"># 2. Register device support and record types</span>
+<span class="kw">dbLoadDatabase</span>(<span class="st">"../../dbd/softIoc.dbd"</span>)
+<span class="fn">softIoc_registerRecordDeviceDriver</span>(pdbbase)
+
+<span class="cm"># 3. Load hardware driver (e.g. serial, GPIB, Modbus)</span>
+<span class="kw">drvAsynIPPortConfigure</span>(<span class="st">"GAS_PORT"</span>, <span class="st">"192.168.1.50:4001"</span>, <span class="nm">0</span>, <span class="nm">0</span>, <span class="nm">0</span>)
+
+<span class="cm"># 4. Load record databases — macros substitute ${DEVICE}</span>
+<span class="kw">dbLoadRecords</span>(<span class="st">"db/pressure.db"</span>, <span class="st">"device=${DEVICE}"</span>)
+<span class="kw">dbLoadRecords</span>(<span class="st">"db/valves.db"</span>,   <span class="st">"device=${DEVICE}"</span>)
+
+<span class="cm"># 5. Start the IOC — begins serving CA requests</span>
+<span class="kw">iocInit</span>
+
+<span class="cm"># 6. Post-init commands (optional)</span>
+<span class="kw">epicsThreadSleep</span>(<span class="nm">1</span>)
+<span class="kw">dbpf</span> <span class="pv">LCLS:GAS:VALVE1:CMD</span>, <span class="nm">0</span>   <span class="cm"># ensure valve closed on boot</span></div>
+  </div>
+
+  <h3>Record Database — .db file</h3>
+  <div class="code-block">
+    <div class="code-hdr"><span class="code-lang">EPICS .db</span><span class="code-desc">Record definitions — these become the PVs clients see</span></div>
+    <div class="code-body"><span class="cm"># Analog input: reads pressure from hardware, 1 Hz scan</span>
+<span class="kw">record</span>(<span class="fd">ai</span>, <span class="pv">"$(device):PRES1"</span>) {
+    <span class="kw">field</span>(<span class="fd">DESC</span>, <span class="st">"Gas system pressure ch1"</span>)
+    <span class="kw">field</span>(<span class="fd">EGU</span>,  <span class="st">"torr"</span>)          <span class="cm"># engineering units</span>
+    <span class="kw">field</span>(<span class="fd">PREC</span>, <span class="st">"2"</span>)             <span class="cm"># decimal precision for display</span>
+    <span class="kw">field</span>(<span class="fd">SCAN</span>, <span class="st">"1 second"</span>)      <span class="cm"># polling rate</span>
+    <span class="kw">field</span>(<span class="fd">INP</span>,  <span class="st">"@asyn(GAS_PORT,0) PRESSURE"</span>) <span class="cm"># hardware address</span>
+    <span class="kw">field</span>(<span class="fd">LOPR</span>, <span class="st">"0"</span>)             <span class="cm"># display low range</span>
+    <span class="kw">field</span>(<span class="fd">HOPR</span>, <span class="st">"1e-3"</span>)         <span class="cm"># display high range</span>
+    <span class="kw">field</span>(<span class="fd">HIGH</span>, <span class="st">"1e-6"</span>)         <span class="cm"># MINOR alarm threshold</span>
+    <span class="kw">field</span>(<span class="fd">HIHI</span>, <span class="st">"1e-5"</span>)         <span class="cm"># MAJOR alarm threshold</span>
+    <span class="kw">field</span>(<span class="fd">HSV</span>,  <span class="st">"MINOR"</span>)        <span class="cm"># severity for HIGH</span>
+    <span class="kw">field</span>(<span class="fd">HHSV</span>, <span class="st">"MAJOR"</span>)        <span class="cm"># severity for HIHI</span>
+}
+
+<span class="cm"># Binary output: controls a valve</span>
+<span class="kw">record</span>(<span class="fd">bo</span>, <span class="pv">"$(device):VALVE1:CMD"</span>) {
+    <span class="kw">field</span>(<span class="fd">DESC</span>, <span class="st">"Valve 1 open command"</span>)
+    <span class="kw">field</span>(<span class="fd">ZNAM</span>, <span class="st">"CLOSED"</span>)       <span class="cm"># label for 0</span>
+    <span class="kw">field</span>(<span class="fd">ONAM</span>, <span class="st">"OPEN"</span>)         <span class="cm"># label for 1</span>
+    <span class="kw">field</span>(<span class="fd">OUT</span>,  <span class="st">"@asyn(GAS_PORT,0) VALVE1"</span>)
+    <span class="kw">field</span>(<span class="fd">SCAN</span>, <span class="st">"Passive"</span>)      <span class="cm"># only acts on CA put</span>
+}</div>
+  </div>
+
+  <div class="box box-tango">
+    <div class="bx-lbl">Tango Parallel</div>
+    <p>The <code>.db</code> record database ≈ a Tango device class definition. Records are the attributes. <code>SCAN</code> field ≈ Tango polling interval. <code>INP</code>/<code>OUT</code> link ≈ Tango device property pointing to hardware address. <code>DESC</code>, <code>EGU</code>, <code>PREC</code> ≈ Tango attribute configuration (unit, format, label). The alarm fields (<code>HIGH</code>, <code>HIHI</code>, <code>HSV</code>) are EPICS's built-in equivalent of Tango's alarm/warning thresholds.</p>
+  </div>
+</section>
+
+<!-- ── PROCESS VARIABLES ── -->
+<section class="sec" id="pvs">
+  <div class="sec-hdr">
+    <span class="sec-id">02</span>
+    <h2 class="sec-ttl">Process Variables</h2>
+    <span class="badge b-kc">Know Cold</span>
+  </div>
+  <div class="prose">
+    <p>A Process Variable is a named value served by an IOC. The name is a plain string up to 61 characters. At SLAC the convention is <code>SYSTEM:DEVICE_TYPE:LOCATION:SIGNAL</code> — for example <code>LCLS:GAS:HUTCH1:PRES1</code> or <code>LCLS:LASER:PUMP:PWR</code>. The colon is a naming separator by convention, not a protocol requirement.</p>
+    <p>Every PV has <strong>fields</strong> that are accessed by appending a dot and the field name. The bare PV name refers to the <strong>VAL</strong> field, which is the primary data value. Common fields you will encounter:</p>
+  </div>
+  <div class="code-block">
+    <div class="code-hdr"><span class="code-lang">Shell</span><span class="code-desc">PV field access — the VAL field is the default</span></div>
+    <div class="code-body"><span class="cm"># bare name = VAL field = the primary value</span>
+<span class="fn">caget</span> <span class="pv">LCLS:GAS:PRES1</span>              <span class="cm"># → 8.73e-07</span>
+
+<span class="cm"># explicit field access</span>
+<span class="fn">caget</span> <span class="pv">LCLS:GAS:PRES1</span>.<span class="fd">EGU</span>          <span class="cm"># → torr (engineering units)</span>
+<span class="fn">caget</span> <span class="pv">LCLS:GAS:PRES1</span>.<span class="fd">DESC</span>         <span class="cm"># → Gas system pressure ch1</span>
+<span class="fn">caget</span> <span class="pv">LCLS:GAS:PRES1</span>.<span class="fd">SEVR</span>         <span class="cm"># → NO_ALARM / MINOR / MAJOR / INVALID</span>
+<span class="fn">caget</span> <span class="pv">LCLS:GAS:PRES1</span>.<span class="fd">STAT</span>         <span class="cm"># → alarm status (HIGH, HIHI, LINK, etc.)</span>
+<span class="fn">caget</span> <span class="pv">LCLS:GAS:PRES1</span>.<span class="fd">TIME</span>         <span class="cm"># → last update timestamp</span>
+<span class="fn">caget</span> <span class="pv">LCLS:GAS:PRES1</span>.<span class="fd">SCAN</span>         <span class="cm"># → 1 second (scan rate)</span>
+<span class="fn">caget</span> <span class="pv">LCLS:GAS:PRES1</span>.<span class="fd">HIHI</span>         <span class="cm"># → 1e-5 (MAJOR alarm threshold)</span>
+<span class="fn">caget</span> <span class="pv">LCLS:GAS:PRES1</span>.<span class="fd">PREC</span>         <span class="cm"># → 2 (decimal precision)</span></div>
+  </div>
+  <div class="box box-note">
+    <div class="bx-lbl">Key Field: SCAN</div>
+    <p>The <code>SCAN</code> field controls how the IOC refreshes the PV. <strong>Passive</strong> means only on an external trigger (a CA put, or another record driving it). Periodic values like <strong>"1 second"</strong>, <strong>"0.1 second"</strong>, <strong>"10 second"</strong> are polling periods. <strong>I/O Intr</strong> means the driver interrupts when the hardware has new data — used for event-driven hardware like beam timing.</p>
+  </div>
+</section>
+
+<!-- ── RECORD TYPES ── -->
+<section class="sec" id="record-types">
+  <div class="sec-hdr">
+    <span class="sec-id">03</span>
+    <h2 class="sec-ttl">Record Type Reference</h2>
+    <span class="badge b-ref">Reference</span>
+  </div>
+  <p style="color:var(--tm);font-size:13.5px;margin-bottom:18px">The record type determines the data type and behavior of a PV. Know the first five cold; the rest you can look up.</p>
+  <table class="rec-table">
+    <thead><tr><th>Record type</th><th>Data</th><th>When you see it</th><th>Key fields</th></tr></thead>
+    <tbody>
+      <tr><td><span class="rn">ai / ao</span> <span class="rimp rimp-ess">essential</span></td><td>float64</td><td>Any sensor readback or analog setpoint — pressure, temperature, beam current, motor position</td><td>EGU, PREC, HIGH, HIHI, LOW, LOLO, SCAN, INP/OUT</td></tr>
+      <tr><td><span class="rn">bi / bo</span> <span class="rimp rimp-ess">essential</span></td><td>uint (0 or 1)</td><td>Valve open/close, interlock status, enable/disable flags</td><td>ZNAM (label for 0), ONAM (label for 1), ZSV / OSV (severities)</td></tr>
+      <tr><td><span class="rn">mbbi / mbbo</span> <span class="rimp rimp-ess">essential</span></td><td>uint (0–15)</td><td>Mode selectors, state machines, multi-position switches</td><td>ZRST / ONST / TWST … (string labels for each state), severity per state</td></tr>
+      <tr><td><span class="rn">waveform</span> <span class="rimp rimp-ess">essential</span></td><td>array</td><td>Detector waveforms, beam position traces, long strings (FTVL=CHAR)</td><td>FTVL (element type: FLOAT, DOUBLE, CHAR, SHORT), NELM (max elements)</td></tr>
+      <tr><td><span class="rn">calc / calcout</span> <span class="rimp rimp-ess">essential</span></td><td>float64</td><td>Derived values — unit conversions, simple arithmetic on other PVs</td><td>CALC (expression string, up to 12 input links A–L), INPA–INPL</td></tr>
+      <tr><td><span class="rn">seq</span> <span class="rimp rimp-com">common</span></td><td>—</td><td>State machine logic, scripted command sequences</td><td>DO1–DO10 (output values), LNK1–LNK10 (output PVs), DLY1–DLY10 (delays)</td></tr>
+      <tr><td><span class="rn">longin / longout</span> <span class="rimp rimp-com">common</span></td><td>int32</td><td>Counters, integer setpoints, event codes in timing systems</td><td>Same alarm fields as ai/ao</td></tr>
+      <tr><td><span class="rn">stringin / stringout</span> <span class="rimp rimp-com">common</span></td><td>40-char string</td><td>Status messages, device names, short labels — hard 39-char limit</td><td>VAL field. For longer strings use waveform with FTVL=CHAR</td></tr>
+      <tr><td><span class="rn">compress</span> <span class="rimp rimp-com">common</span></td><td>array</td><td>Averaging or circular-buffering a fast waveform for display</td><td>ALG (Average, Circular Buffer, etc.), NSAM, N</td></tr>
+      <tr><td><span class="rn">fanout</span> <span class="rimp rimp-com">common</span></td><td>—</td><td>Triggers multiple records at once — like a Passive record fan-out switch</td><td>LNK1–LNK6 (target records to process)</td></tr>
+    </tbody>
+  </table>
+  <div class="box box-tango">
+    <div class="bx-lbl">Tango Parallel</div>
+    <p>Tango attribute types map directly: <code>DEV_DOUBLE</code> ≈ <code>ai/ao</code>, <code>DEV_BOOLEAN</code> ≈ <code>bi/bo</code>, <code>DEV_ENUM</code> ≈ <code>mbbi/mbbo</code>, <code>DEV_FLOAT_SPECTRUM</code> ≈ <code>waveform</code> with FTVL=FLOAT, <code>DEV_STRING</code> ≈ <code>stringin/stringout</code>. Tango Commands have no direct record equivalent — they are implemented in EPICS as a combination of a <code>bo</code> or <code>mbbo</code> PV (the command trigger) plus a <code>seq</code> record (the sequenced action).</p>
+  </div>
+</section>
+
+<!-- ── CHANNEL ACCESS ── -->
+<section class="sec" id="ca">
+  <div class="sec-hdr">
+    <span class="sec-id">04</span>
+    <h2 class="sec-ttl">Channel Access Protocol</h2>
+    <span class="badge b-kc">Know Cold</span>
+  </div>
+  <div class="prose">
+    <p>Channel Access (CA) is the original EPICS network protocol. It uses <strong>UDP port 5064</strong> for PV name searches and <strong>TCP port 5064</strong> for all data exchange once a channel is opened. When a client asks for a PV, it broadcasts a UDP search packet; the IOC serving that PV replies with its IP and port; the client opens a TCP connection and the channel is established.</p>
+    <p>The <strong>CA Repeater</strong> is a helper process running on the client host at <strong>UDP port 5065</strong>. It receives IOC beacon packets — periodic UDP heartbeats that IOCs broadcast every ~15 seconds — and relays them to all CA clients on the local machine. If the beacon stops and then resumes, the client library detects a <strong>beacon anomaly</strong>, which signals that the IOC restarted and any outstanding channel connections need to be re-verified.</p>
+    <p>Name resolution is controlled by <strong><code>EPICS_CA_ADDR_LIST</code></strong>, an environment variable containing space-separated IP addresses or subnet broadcast addresses. If unset, CA broadcasts to the local subnet. On a multi-subnet facility like LCLS, it must be explicitly configured to reach IOCs on different segments.</p>
+  </div>
+  <div class="code-block">
+    <div class="code-hdr"><span class="code-lang">Shell</span><span class="code-desc">Essential environment variables</span></div>
+    <div class="code-body"><span class="cm"># Tell CA where to search for IOCs on multiple subnets</span>
+<span class="kw">export</span> EPICS_CA_ADDR_LIST=<span class="st">"10.0.1.255 10.0.2.255 172.27.100.10"</span>
+<span class="kw">export</span> EPICS_CA_AUTO_ADDR_LIST=<span class="st">"NO"</span>    <span class="cm"># disable default local broadcast</span>
+
+<span class="cm"># Timeout for initial PV connection (seconds)</span>
+<span class="kw">export</span> EPICS_CA_CONN_TMO=<span class="st">"30.0"</span>
+
+<span class="cm"># Maximum array size in bytes (default 16384 = ~4K floats)</span>
+<span class="cm"># Raise this to handle large detector waveforms</span>
+<span class="kw">export</span> EPICS_CA_MAX_ARRAY_BYTES=<span class="st">"10000000"</span></div>
+  </div>
+  <div class="box box-tango">
+    <div class="bx-lbl">Tango Parallel</div>
+    <p><code>EPICS_CA_ADDR_LIST</code> ≈ <code>TANGO_HOST</code>. Both tell clients where to find servers. The difference: TANGO_HOST points to a central database server (MySQL-backed) that knows all device locations. CA name resolution is peer-to-peer UDP search — no central registry. This makes EPICS more resilient (no database single point of failure) but means new clients must know the subnet addresses to search.</p>
+  </div>
+  <div class="box box-warn">
+    <div class="bx-lbl">Interview Trap</div>
+    <p>If asked "what is the CA Repeater?" — it is not the IOC, not the CA gateway, and not a proxy. It is a client-side daemon on port 5065 that forwards IOC beacon packets to local CA clients so they can detect IOC restarts. One CA Repeater per machine, started automatically by the first CA client process on that host.</p>
+  </div>
+</section>
+
+<!-- ── PV ACCESS ── -->
+<section class="sec" id="pva">
+  <div class="sec-hdr">
+    <span class="sec-id">05</span>
+    <h2 class="sec-ttl">PV Access (PVA)</h2>
+    <span class="badge b-slac">LCLS-II</span>
+  </div>
+  <div class="prose">
+    <p>PV Access is the newer EPICS protocol, part of EPICS 7. It uses <strong>port 5075</strong> and carries <strong>structured data types</strong> (pvData structures) rather than the flat scalar/array types of CA. The key advantage is that a single PV can contain a complex object — for example, a detector image plus its metadata, timestamps, and attributes all in one atomic request.</p>
+    <p>The standard EPICS normative types (NT types) you will encounter at LCLS:</p>
+  </div>
+  <table class="rec-table">
+    <thead><tr><th>NT Type</th><th>What it carries</th><th>Where you see it</th></tr></thead>
+    <tbody>
+      <tr><td><span class="rn">NTScalar</span></td><td>Single value with alarm, timestamp, descriptor</td><td>Scalar PVs on EPICS 7 IOCs</td></tr>
+      <tr><td><span class="rn">NTScalarArray</span></td><td>Array with alarm, timestamp</td><td>Waveforms from EPICS 7 IOCs</td></tr>
+      <tr><td><span class="rn">NTNDArray</span></td><td>N-dimensional detector image + attributes + timestamps</td><td>areaDetector cameras, LCLS detector systems</td></tr>
+      <tr><td><span class="rn">NTTable</span></td><td>Columnar data structure</td><td>Scan data, tabular instrument data</td></tr>
+    </tbody>
+  </table>
+  <div class="code-block">
+    <div class="code-hdr"><span class="code-lang">Shell</span><span class="code-desc">PVA command-line tools — different binaries from CA tools</span></div>
+    <div class="code-body"><span class="cm"># PVA get — prefix pva:// optional but explicit</span>
+<span class="fn">pvget</span>     <span class="pv">LCLS:DET1:IMAGE</span>
+<span class="fn">pvget</span> <span class="st">-r</span> <span class="st">"field(value,alarm,timeStamp)"</span> <span class="pv">LCLS:DET1:IMAGE</span>
+
+<span class="cm"># PVA monitor</span>
+<span class="fn">pvmonitor</span> <span class="pv">LCLS:DET1:IMAGE</span>
+
+<span class="cm"># CA put still works for scalar PVs via caput</span>
+<span class="cm"># PVA put</span>
+<span class="fn">pvput</span>     <span class="pv">LCLS:GAS:VALVE1:CMD</span> <span class="nm">1</span></div>
+  </div>
+  <div class="box box-tango">
+    <div class="bx-lbl">Tango Parallel</div>
+    <p>NTNDArray ≈ Tango DevImage attribute + Tango Pipe for metadata. The concept of carrying structured, typed, self-describing data is the same problem Tango Pipes were invented to solve. PVA is EPICS's answer to the same gap. EPICS 7 is the version that unifies CA and PVA in one IOC — analogous to how Tango 9+ unified the event system.</p>
+  </div>
+  <div class="box box-slac">
+    <div class="bx-lbl">SLAC / LCLS</div>
+    <p>LCLS-I runs primarily on EPICS 3 (CA only). LCLS-II (the superconducting upgrade) runs EPICS 7, which carries both CA and PVA in the same IOC. areaDetector — the framework for detector systems at LCLS — uses PVA NTNDArray for image data. If asked about LCLS-II at SLAC, the transition from CA to EPICS 7 with PVA is a meaningful answer.</p>
+  </div>
+</section>
+
+<!-- ── PYTHON INTERFACES ── -->
+<section class="sec" id="python">
+  <div class="sec-hdr">
+    <span class="sec-id">06</span>
+    <h2 class="sec-ttl">Python Interfaces</h2>
+    <span class="badge b-kc">Know Cold</span>
+  </div>
+  <div class="prose">
+    <p>Three Python libraries cover 95% of EPICS Python work. Know the difference between them so you can name the right one when asked.</p>
+  </div>
+
+  <h3>pyepics — the standard workhorse</h3>
+  <p style="color:var(--tm);font-size:13.5px;line-height:1.65;margin-bottom:14px">Wraps libca (the C CA client library). Callback-based. Thread-safe with care. Most legacy LCLS Python control code uses pyepics.</p>
+  <div class="code-block">
+    <div class="code-hdr"><span class="code-lang">Python · pyepics</span><span class="code-desc">Read, write, and monitor</span></div>
+    <div class="code-body"><span class="kw">import</span> epics
+
+<span class="cm"># Synchronous read/write — blocks until response</span>
+val  = epics.<span class="fn">caget</span>(<span class="st">'LCLS:GAS:PRES1'</span>)
+epics.<span class="fn">caput</span>(<span class="st">'LCLS:GAS:VALVE1:CMD'</span>, <span class="nm">1</span>)
+
+<span class="cm"># Read with metadata</span>
+data = epics.<span class="fn">caget</span>(<span class="st">'LCLS:GAS:PRES1'</span>, with_ctrlvars=<span class="kw">True</span>)
+<span class="cm"># data['units'], data['severity'], data['upper_alarm_limit'] etc.</span>
+
+<span class="cm"># Monitor: callback fires on every value change</span>
+<span class="kw">def</span> <span class="fn">on_pressure_change</span>(pvname, value, timestamp, **kw):
+    <span class="kw">if</span> value > <span class="nm">1e-6</span>:
+        <span class="fn">handle_alarm</span>(pvname, value)
+
+epics.<span class="fn">camonitor</span>(<span class="st">'LCLS:GAS:PRES1'</span>, callback=on_pressure_change)
+
+<span class="cm"># PV object — better for long-lived references</span>
+pv = epics.<span class="fn">PV</span>(<span class="st">'LCLS:GAS:PRES1'</span>)
+pv.<span class="fn">add_callback</span>(on_pressure_change)
+<span class="kw">print</span>(pv.value, pv.units, pv.severity)</div>
+  </div>
+
+  <h3>caproto — pure Python, asyncio-native</h3>
+  <p style="color:var(--tm);font-size:13.5px;line-height:1.65;margin-bottom:14px">No C library dependency. Implements CA protocol in pure Python. Asyncio-native, making it the right choice for high-throughput monitoring or when you need to run many PV subscriptions concurrently without callbacks.</p>
+  <div class="code-block">
+    <div class="code-hdr"><span class="code-lang">Python · caproto</span><span class="code-desc">Sync and async interfaces</span></div>
+    <div class="code-body"><span class="cm"># Sync client — simplest for one-shot reads</span>
+<span class="kw">from</span> caproto.sync.client <span class="kw">import</span> read, write, monitor
+
+response = <span class="fn">read</span>(<span class="st">'LCLS:GAS:PRES1'</span>)
+<span class="kw">print</span>(response.data[<span class="nm">0</span>])    <span class="cm"># the value</span>
+
+<span class="cm"># Async client — for concurrent monitoring without threads</span>
+<span class="kw">import</span> asyncio
+<span class="kw">from</span> caproto.asyncio.client <span class="kw">import</span> Context
+
+<span class="kw">async def</span> <span class="fn">monitor_pressure</span>():
+    ctx = <span class="kw">await</span> Context.<span class="fn">create</span>()
+    chan, = <span class="kw">await</span> ctx.<span class="fn">get_many_pvs</span>(<span class="st">'LCLS:GAS:PRES1'</span>)
+    <span class="kw">await</span> chan.<span class="fn">subscribe</span>(data_type=<span class="st">'time'</span>)
+    <span class="kw">async for</span> event <span class="kw">in</span> chan.updates():
+        <span class="kw">print</span>(event.data[<span class="nm">0</span>], event.metadata.timestamp)</div>
+  </div>
+
+  <h3>p4p — PV Access client and server</h3>
+  <p style="color:var(--tm);font-size:13.5px;line-height:1.65;margin-bottom:14px">The standard Python interface for PVA. Required for NTNDArray detector data, NTTable, and any EPICS 7 structured PV.</p>
+  <div class="code-block">
+    <div class="code-hdr"><span class="code-lang">Python · p4p</span><span class="code-desc">PV Access — structured data</span></div>
+    <div class="code-body"><span class="kw">from</span> p4p.client.thread <span class="kw">import</span> Context
+
+ctx = <span class="fn">Context</span>(<span class="st">'pva'</span>)
+
+<span class="cm"># Get a PVA channel — returns a Value (pvData structure)</span>
+val = ctx.<span class="fn">get</span>(<span class="st">'LCLS:DET1:IMAGE'</span>)
+<span class="kw">print</span>(val.value)             <span class="cm"># the image array</span>
+<span class="kw">print</span>(val.timeStamp.secondsPastEpoch)
+
+<span class="cm"># Subscribe</span>
+<span class="kw">def</span> <span class="fn">on_image</span>(value):
+    process_frame(value.value, value.attribute)
+
+sub = ctx.<span class="fn">monitor</span>(<span class="st">'LCLS:DET1:IMAGE'</span>, on_image)</div>
+  </div>
+
+  <div class="box box-slac">
+    <div class="bx-lbl">SLAC / LCLS Python Stack</div>
+    <p>LCLS Python control code typically uses <strong>pyepics</strong> for CA channels (motors, diagnostics, interlocks) and <strong>p4p</strong> for detector data arriving as NTNDArray. The higher-level abstraction layer you may hear about at SLAC is <strong>ophyd</strong> (developed at BNL, used at some SLAC beamlines) — it wraps pyepics PVs into "Device" objects with Signal components, similar to how a Tango DeviceProxy aggregates attributes. A newer SLAC-specific layer is <strong>pcdsdevices</strong>, which builds ophyd devices for LCLS hardware.</p>
+  </div>
+</section>
+
+<!-- ── PyDM ── -->
+<section class="sec" id="pydm">
+  <div class="sec-hdr">
+    <span class="sec-id">07</span>
+    <h2 class="sec-ttl">PyDM &amp; the SLAC GUI Stack</h2>
+    <span class="badge b-slac">SLAC-built</span>
+  </div>
+  <div class="prose">
+    <p><strong>PyDM</strong> (Python Display Manager) is a PyQt5/6-based framework built at SLAC for building EPICS control room displays. It replaces older tools like MEDM (Motif-based, 1990s-era) and partially replaces CS-Studio (Java-based). You can mention PyDM by name in the interview — it signals you researched SLAC's actual toolchain, not just EPICS generics.</p>
+    <p>PyDM's architecture: every GUI widget is a <strong>data plugin</strong> consumer. Widgets like <code>PyDMLabel</code>, <code>PyDMByteIndicator</code>, and <code>PyDMWaveformPlot</code> connect to channels via a URI scheme. The CA data plugin handles <code>ca://PV_NAME</code>, the PVA plugin handles <code>pva://PV_NAME</code>. Displays are defined either as <code>.ui</code> files (Qt Designer) or as <code>.py</code> files (pure Python). Macros (<code>${DEVICE}</code>) substitute into channel addresses at runtime, making a single display reusable across multiple device instances.</p>
+  </div>
+  <div class="code-block">
+    <div class="code-hdr"><span class="code-lang">Python · PyDM display</span><span class="code-desc">A minimal programmatic display — .py format</span></div>
+    <div class="code-body"><span class="kw">from</span> pydm <span class="kw">import</span> Display
+<span class="kw">from</span> pydm.widgets <span class="kw">import</span> PyDMLabel, PyDMByteIndicator, PyDMWaveformPlot
+<span class="kw">from</span> qtpy.QtWidgets <span class="kw">import</span> QVBoxLayout
+
+<span class="kw">class</span> <span class="fn">GasSystemDisplay</span>(Display):
+    <span class="kw">def</span> <span class="fn">__init__</span>(self, parent=<span class="kw">None</span>, args=<span class="kw">None</span>, macros=<span class="kw">None</span>):
+        <span class="fn">super</span>().__init__(parent, args, macros)
+        layout = <span class="fn">QVBoxLayout</span>()
+
+        <span class="cm"># ${DEVICE} is substituted from macros at runtime</span>
+        pressure_lbl = <span class="fn">PyDMLabel</span>(
+            channel=<span class="st">"ca://${DEVICE}:PRES1"</span>
+        )
+        valve_ind = <span class="fn">PyDMByteIndicator</span>(
+            channel=<span class="st">"ca://${DEVICE}:VALVE1:CMD"</span>
+        )
+
+        layout.<span class="fn">addWidget</span>(pressure_lbl)
+        layout.<span class="fn">addWidget</span>(valve_ind)
+        self.<span class="fn">setLayout</span>(layout)
+
+    <span class="kw">def</span> <span class="fn">ui_filename</span>(self):
+        <span class="kw">return None</span>   <span class="cm"># pure-Python display, no .ui file</span></div>
+  </div>
+  <div class="code-block">
+    <div class="code-hdr"><span class="code-lang">Shell</span><span class="code-desc">Launching a PyDM display with macros</span></div>
+    <div class="code-body"><span class="cm"># Launch a .py display with macro substitution</span>
+<span class="fn">pydm</span> <span class="st">--macros</span> <span class="st">"DEVICE=LCLS:GAS,HUTCH=HXR"</span> gas_system.py
+
+<span class="cm"># Launch a .ui file (Qt Designer output)</span>
+<span class="fn">pydm</span> <span class="st">--macros</span> <span class="st">"DEVICE=LCLS:GAS"</span> gas_system.ui</div>
+  </div>
+
+  <h3>GUI Tool Landscape at SLAC</h3>
+  <table class="rec-table">
+    <thead><tr><th>Tool</th><th>Stack</th><th>Status at SLAC</th></tr></thead>
+    <tbody>
+      <tr><td><strong>PyDM</strong></td><td>Python · PyQt5/6</td><td>Current standard — SLAC-developed, active</td></tr>
+      <tr><td>CS-Studio / Phoebus</td><td>Java · Eclipse</td><td>Legacy — existing displays, being replaced by PyDM</td></tr>
+      <tr><td>MEDM</td><td>C · Motif</td><td>Very legacy — still running some old displays at LCLS</td></tr>
+      <tr><td>CAQTDM</td><td>C++ · Qt</td><td>Not primary at SLAC — used at PSI and some European facilities</td></tr>
+    </tbody>
+  </table>
+  <div class="box box-tango">
+    <div class="bx-lbl">Tango Parallel</div>
+    <p>PyDM ≈ Waltz (what you built) in purpose and architecture. Both are modern web/desktop frontends for control systems that replace aging thick-client tools. The key difference: Waltz is browser-based over your Tango REST API; PyDM is a desktop application using PyQt directly. The design philosophy is identical — data channel abstraction so displays are reusable across devices.</p>
+  </div>
+</section>
+
+<!-- ── DIAGNOSTIC TOOLKIT ── -->
+<section class="sec" id="diag">
+  <div class="sec-hdr">
+    <span class="sec-id">08</span>
+    <h2 class="sec-ttl">Diagnostic Toolkit</h2>
+    <span class="badge b-kc">Know Cold</span>
+  </div>
+  <p style="color:var(--tm);font-size:13.5px;margin-bottom:20px">These are the first tools you reach for when something breaks. Know them by name and know what each one tells you.</p>
+  <div class="cmd-grid">
+    <div class="cmd-card">
+      <div class="cmd-line"><span class="kw">camonitor</span> <span class="pv">PV_NAME</span></div>
+      <div class="cmd-desc">Subscribes to a PV and prints every value change with timestamp. The single most-used EPICS diagnostic command. Leave it running while you debug — if the line stops updating, the PV is frozen. If it never appears, the PV is disconnected. <strong>Shows timestamp, value, and alarm severity on each line.</strong></div>
+    </div>
+    <div class="cmd-card">
+      <div class="cmd-line"><span class="kw">cainfo</span> <span class="pv">PV_NAME</span></div>
+      <div class="cmd-desc">Fetches metadata about a PV without reading its value: which IOC serves it, its CA server hostname and port, its data type, element count, access rights, and alarm thresholds. <strong>If it returns "Channel not found," the PV is either nonexistent or unreachable — check EPICS_CA_ADDR_LIST.</strong></div>
+    </div>
+    <div class="cmd-card">
+      <div class="cmd-line"><span class="kw">caget</span> <span class="pv">PV_NAME</span>  &nbsp;&nbsp; <span class="kw">caget -a</span> <span class="pv">PV_NAME</span></div>
+      <div class="cmd-desc">Single read. With <code>-a</code> flag, returns all control-layer metadata (units, limits, alarm thresholds, precision, status). Use <code>-a</code> when diagnosing alarm states — it shows HIHI/HIGH/LOW/LOLO limits in one command.</div>
+    </div>
+    <div class="cmd-card">
+      <div class="cmd-line"><span class="kw">caput</span> <span class="pv">PV_NAME</span> <span class="nm">value</span> &nbsp;&nbsp; <span class="kw">caput -c</span> <span class="pv">PV_NAME</span> <span class="nm">value</span></div>
+      <div class="cmd-desc">Write a value. With <code>-c</code> (callback) flag, waits for the IOC to process the put and confirm completion — important when writing to a record that drives hardware and you need to know the write succeeded before proceeding.</div>
+    </div>
+    <div class="cmd-card">
+      <div class="cmd-line"><span class="kw">pvget</span> <span class="pv">PV_NAME</span> &nbsp;&nbsp; <span class="kw">pvmonitor</span> <span class="pv">PV_NAME</span></div>
+      <div class="cmd-desc">PV Access equivalents of caget and camonitor. Use these when the PV is on an EPICS 7 IOC or when you need structured data (NTNDArray, NTTable). If <code>pvget</code> succeeds but <code>caget</code> fails, the channel is PVA-only.</div>
+    </div>
+    <div class="cmd-card">
+      <div class="cmd-line"><span class="kw">caRepeater</span>  &nbsp;&nbsp; <span class="kw">caproxy</span></div>
+      <div class="cmd-desc"><code>caRepeater</code> is normally started automatically — run it manually only if you suspect it died (<strong>symptoms: beacon anomaly not detected, IOC restart not noticed by clients</strong>). <code>caproxy</code> is a CA gateway proxy, used when clients and IOCs are on different network segments and broadcast cannot reach across.</div>
+    </div>
+  </div>
+
+  <h3>IOC Shell Commands (inside a running IOC)</h3>
+  <div class="code-block">
+    <div class="code-hdr"><span class="code-lang">EPICS IOC Shell</span><span class="code-desc">Commands you run in the soft IOC terminal for diagnostics</span></div>
+    <div class="code-body"><span class="cm"># Show all threads and their status</span>
+<span class="fn">epicsThreadShowAll</span>
+
+<span class="cm"># Show callback statistics — reveals callback queue pressure</span>
+<span class="fn">callbackStats</span>
+
+<span class="cm"># Show all records and their current values</span>
+<span class="fn">dbl</span>                    <span class="cm"># list all record names</span>
+<span class="fn">dbpr</span> <span class="pv">LCLS:GAS:PRES1</span>   <span class="cm"># print one record's complete field table</span>
+
+<span class="cm"># Force a record to process immediately</span>
+<span class="fn">dbpf</span> <span class="pv">LCLS:GAS:PRES1</span>.PROC <span class="nm">1</span>
+
+<span class="cm"># Check asyn driver status</span>
+<span class="fn">asynReport</span> <span class="nm">4</span> <span class="st">"GAS_PORT"</span></div>
+  </div>
+</section>
+
+<!-- ── FAILURE MODES ── -->
+<section class="sec" id="failures">
+  <div class="sec-hdr">
+    <span class="sec-id">09</span>
+    <h2 class="sec-ttl">Common Failure Modes</h2>
+    <span class="badge b-kc">Know Cold</span>
+  </div>
+  <p style="color:var(--tm);font-size:13.5px;margin-bottom:20px">The five scenarios that come up in every controls engineer's first month. Know the symptom → diagnosis → fix sequence for each.</p>
+
+  <div class="fail-card">
+    <div class="fail-title">1. Soft IOC running but PVs unresponsive</div>
+    <div class="fail-sym">Symptom: <span>camonitor shows no updates. cainfo shows channel found but value stale. IOC process is alive (ps confirms).</span></div>
+    <div class="fail-fix"><strong>Likely cause:</strong> A synchronous operation in a CA callback thread is blocking the entire IOC callback system. EPICS callback threads must never block — if device support or a user callback performs a blocking I/O or sleeps, all callbacks queue behind it. <strong>Diagnosis:</strong> Run <span class="fail-cmd">epicsThreadShowAll</span> and <span class="fail-cmd">callbackStats</span> in the IOC shell. Look for a thread stuck in a long-running state. Check for callback queue depth &gt; 0. <strong>Fix:</strong> Move blocking work to a separate worker thread; callbacks must execute in microseconds and return.</div>
+  </div>
+
+  <div class="fail-card">
+    <div class="fail-title">2. Channel not found — PV unreachable from client</div>
+    <div class="fail-sym">Symptom: <span>cainfo returns "Channel not found". camonitor never connects. IOC is running on another host.</span></div>
+    <div class="fail-fix"><strong>Likely cause:</strong> Client's CA address list doesn't reach the IOC's subnet. <strong>Diagnosis:</strong> Run <span class="fail-cmd">echo $EPICS_CA_ADDR_LIST</span> — if empty or wrong, this is the cause. Alternatively the IOC is on a subnet blocked by a firewall. <strong>Fix:</strong> Add the IOC's subnet broadcast address or the IOC's direct IP to <span class="fail-cmd">EPICS_CA_ADDR_LIST</span>. If cross-subnet: deploy a <code>caproxy</code> gateway on a host visible to both sides.</div>
+  </div>
+
+  <div class="fail-card">
+    <div class="fail-title">3. Beacon anomaly — IOC restarted unexpectedly</div>
+    <div class="fail-sym">Symptom: <span>camonitor shows momentary disconnect then reconnect. IOC log shows a fresh start. Timestamp on PVs jumps.</span></div>
+    <div class="fail-fix"><strong>Cause:</strong> The IOC process crashed and was restarted (by procServ, systemd, or manually). Clients detect the restart because the beacon sequence number resets. <strong>Diagnosis:</strong> Check the IOC log file for the crash reason — look for segfault, OOM kill, or exception. Check <span class="fail-cmd">dmesg</span> for OOM killer events. <strong>Fix:</strong> Address the root cause. Use <code>procServ</code> to auto-restart IOCs in production (standard at LCLS) so the outage window is seconds.</div>
+  </div>
+
+  <div class="fail-card">
+    <div class="fail-title">4. PV value frozen / not scanning</div>
+    <div class="fail-sym">Symptom: <span>caget returns a value but camonitor never sees updates. cainfo shows last update time is old.</span></div>
+    <div class="fail-fix"><strong>Likely causes:</strong> (a) SCAN field set to Passive with no driver to trigger it — check <span class="fail-cmd">caget PVNAME.SCAN</span>. (b) The asyn driver is in an error state and not calling the record back — run <span class="fail-cmd">asynReport 4 "PORT_NAME"</span> in the IOC shell to inspect driver status. (c) Record DISA field is set (disabled). <strong>Fix for (a):</strong> Change SCAN to a periodic value, or add a fanout record to trigger it.</div>
+  </div>
+
+  <div class="fail-card">
+    <div class="fail-title">5. CA client causing IOC CPU spikes</div>
+    <div class="fail-sym">Symptom: <span>IOC host CPU climbs under load. Many clients monitoring fast-scanning PVs. Some PVs scan at 10 Hz or faster.</span></div>
+    <div class="fail-fix"><strong>Cause:</strong> Each CA monitor subscription generates network traffic and IOC processing on every scan period. With many monitors on fast PVs, this compounds. <strong>Diagnosis:</strong> Run <span class="fail-cmd">camonitor -c PVNAME.SCAN</span> to check the actual scan rate; check how many clients have subscriptions using <span class="fail-cmd">cainfo PVNAME</span> (shows connection count). <strong>Fix:</strong> Use MDEL (Monitor Deadband) and ADEL (Archive Deadband) fields on ai records to suppress CA events when the value hasn't changed meaningfully. Consider reducing SCAN on diagnostic PVs to "5 second" outside of active experiments.</div>
+  </div>
+</section>
+
+<!-- ── TANGO → EPICS MAP ── -->
+<section class="sec" id="tango-map">
+  <div class="sec-hdr">
+    <span class="sec-id">10</span>
+    <h2 class="sec-ttl">Tango → EPICS Translation Map</h2>
+    <span class="badge b-kc">Your Advantage</span>
+  </div>
+  <div class="prose">
+    <p>Your native system is Tango. EPICS is the same class of problem with different vocabulary. This table is your mental translation layer — you don't need to pretend you don't know Tango; you can use this mapping in the interview to show architectural depth in both systems.</p>
+  </div>
+  <table class="xref-table">
+    <thead>
+      <tr>
+        <th>Tango concept</th>
+        <th>EPICS equivalent</th>
+        <th>Notes</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><span class="xc-t">DeviceServer</span></td>
+        <td><span class="xc-e">IOC</span></td>
+        <td>Both are the process that owns device data and serves it to clients</td>
+      </tr>
+      <tr>
+        <td><span class="xc-t">Device</span></td>
+        <td><span class="xc-e">(PV naming convention)</span></td>
+        <td>EPICS has no Device object — a "device" is a naming prefix grouping related PVs</td>
+      </tr>
+      <tr>
+        <td><span class="xc-t">Attribute</span></td>
+        <td><span class="xc-e">Process Variable (PV)</span></td>
+        <td>The fundamental named data unit in each system</td>
+      </tr>
+      <tr>
+        <td><span class="xc-t">Command</span></td>
+        <td><span class="xc-e">caput to bo/mbbo + seq record</span></td>
+        <td>EPICS has no command type; commands are implemented as a write to a PV that triggers a sequence record</td>
+      </tr>
+      <tr>
+        <td><span class="xc-t">DevState</span></td>
+        <td><span class="xc-e">mbbi record</span></td>
+        <td>mbbi/mbbo supports up to 16 named states with per-state alarm severity</td>
+      </tr>
+      <tr>
+        <td><span class="xc-t">TANGO_HOST</span></td>
+        <td><span class="xc-e">EPICS_CA_ADDR_LIST</span></td>
+        <td>Both tell clients where to find servers. TANGO_HOST is a central database; CA uses peer-to-peer UDP search</td>
+      </tr>
+      <tr>
+        <td><span class="xc-t">Change event (ZMQ)</span></td>
+        <td><span class="xc-e">CA monitor subscription</span></td>
+        <td>CA monitors are always-on TCP subscriptions; no explicit "subscribe to events" step beyond camonitor</td>
+      </tr>
+      <tr>
+        <td><span class="xc-t">Polling period</span></td>
+        <td><span class="xc-e">SCAN field</span></td>
+        <td>Same concept, different syntax. SCAN "I/O Intr" ≈ Tango push_event from hardware interrupt</td>
+      </tr>
+      <tr>
+        <td><span class="xc-t">Alarm / Warning thresholds</span></td>
+        <td><span class="xc-e">HIHI, HIGH, LOW, LOLO fields</span></td>
+        <td>EPICS alarms are built into every ai/ao record. HHSV, HSV, LSV, LLSV set severity (MAJOR/MINOR)</td>
+      </tr>
+      <tr>
+        <td><span class="xc-t">DEV_FLOAT_SPECTRUM</span></td>
+        <td><span class="xc-e">waveform (FTVL=FLOAT)</span></td>
+        <td>Same concept. waveform also serves as long strings (FTVL=CHAR, NELM=1024)</td>
+      </tr>
+      <tr>
+        <td><span class="xc-t">Pipe (structured data)</span></td>
+        <td><span class="xc-e">PVA NTNDArray / NTTable</span></td>
+        <td>PVA is EPICS's answer to the same structured-data problem Tango Pipes solve</td>
+      </tr>
+      <tr>
+        <td><span class="xc-t">PyTango</span></td>
+        <td><span class="xc-e">pyepics / caproto / p4p</span></td>
+        <td>pyepics = CA, wraps libca. caproto = pure Python CA. p4p = PVA</td>
+      </tr>
+      <tr>
+        <td><span class="xc-t">Waltz / Taurus</span></td>
+        <td><span class="xc-e">PyDM (SLAC) / CS-Studio</span></td>
+        <td>PyDM is the active SLAC-maintained tool. You built the Tango equivalent of PyDM.</td>
+      </tr>
+      <tr>
+        <td><span class="xc-t">HDB++ archiving</span></td>
+        <td><span class="xc-e">EPICS Archiver Appliance</span></td>
+        <td>Both store PV history. EPICS Archiver uses MySQL/Cassandra/MongoDB backends</td>
+      </tr>
+      <tr>
+        <td><span class="xc-t">AccessProxy (access control)</span></td>
+        <td><span class="xc-e">CA Gateway (caproxy)</span></td>
+        <td>The CA Gateway can enforce access rules (read-only for certain subnets, PV whitelist)</td>
+      </tr>
+    </tbody>
+  </table>
+  <div class="box box-slac">
+    <div class="bx-lbl">How to use this in the interview</div>
+    <p>When asked about EPICS depth, you don't need to hide the Tango background — you can lean into it: <em>"My native controls system is Tango, which is architecturally comparable to EPICS — both use a device-server model with published attributes and a publish-subscribe event system. I integrated EPICS Channel Access into a multi-protocol bridge platform at DESY alongside Tango, TINE, and DOOCS. EPICS-native IOC development is the gap I'd close in the first few weeks, but the distributed control systems thinking transfers directly."</em></p>
+    <p>That answer is honest, specific, and demonstrates architectural breadth. It is more credible than claiming EPICS-native experience you don't have, and far stronger than fumbling a generic answer.</p>
+  </div>
+</section>
+
+</main>
+
+<script>
+const sections = document.querySelectorAll('.sec');
+const navItems = document.querySelectorAll('.nv');
+const obs = new IntersectionObserver(entries => {
+  entries.forEach(e => {
+    if (e.isIntersecting) {
+      const id = e.target.id;
+      navItems.forEach(n => n.classList.toggle('active', n.getAttribute('href') === '#' + id));
+    }
+  });
+}, { rootMargin: '-15% 0px -75% 0px' });
+sections.forEach(s => obs.observe(s));
+</script>
+</body>
+</html>
