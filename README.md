@@ -13,6 +13,88 @@ Works the same way whether you're talking to **EPICS** (Python or C++), **Tango 
 
 ---
 
+## The problem, in the room you already work in
+
+Beam drops. Somewhere on the ring, current falls below the safe threshold. The shutter
+has to close — not eventually, on the *next* transition — and it has to reopen the moment
+beam recovers, without missing the recovery and without hammering the PV with a write on
+every single poll tick.
+
+Every control-room engineer has written this. It usually looks like a thread, a global,
+and a comparison against the last-known value:
+
+```python
+# "old style" — manual polling loop + bookkeeping
+_shutter_open = None            # last known state, so we don't rewrite the PV every tick
+_stop = threading.Event()
+
+def shutter_supervisor_loop():
+    global _shutter_open
+    while not _stop.is_set():
+        try:
+            current = controller.read_attribute("BeamCurrent").value
+            ok = current >= MIN_BEAM_CURRENT
+
+            if ok != _shutter_open:                 # manual "did it change?" check
+                shutter_pv.put(1 if ok else 0)
+                _shutter_open = ok
+                print("Shutter OPENED" if ok else "Shutter CLOSED")
+        except Exception as e:
+            print(f"supervisor error: {e}", file=sys.stderr)
+
+        time.sleep(1.0)                             # must match every other poller's rate
+
+threading.Thread(target=shutter_supervisor_loop, daemon=True).start()
+```
+
+It works. It's also where the bugs live: the `_shutter_open` global, the thread lifecycle
+nobody remembers to join on shutdown, and the fact that the moment a *second* piece of
+logic — an interlock abort trigger, or "wait for healthy beam before starting the next
+projection" — also needs `BeamCurrent`, you're choosing between opening a second
+`DeviceProxy` and polling twice, or hand-rolling a callback list to fan the one poll out:
+pub/sub from scratch, with its own thread-safety to get right.
+
+This is the same logic, unmodified, from the
+[combined storage-ring/beamline demo](demo/synchrotron-beamline/guarded_scan.py):
+
+```python
+# demo/synchrotron-beamline/guarded_scan.py
+# `health` is a *shared* 1 Hz poll (see facility.py: ring_health()) — every consumer
+# below subscribes to the same stream; there is no second poll to open.
+supervisor_disp = health.pipe(
+    ops.map(lambda h: h.current >= MIN_BEAM_CURRENT),   # -> bool: is the beam OK?
+    ops.distinct_until_changed(),                       # only pass on state *changes*
+    ops.flat_map(
+        lambda ok: write_pv(PV_SHUTTER, 1 if ok else 0, ctx)
+    ),
+).subscribe(
+    on_next=lambda v: print(
+        f"  {'🔆 Shutter OPENED' if v else '🔒 Shutter CLOSED'}"
+        f"  (beam {'OK' if v else 'lost — scan paused'})"
+    ),
+    on_error=lambda e: print(f"  supervisor error: {e}", file=sys.stderr),
+    scheduler=scheduler,
+)
+```
+
+Read it against the loop above, line for line: `map` computes `ok`, exactly like the
+`current >= MIN_BEAM_CURRENT` line. `distinct_until_changed` *is* the
+`if ok != _shutter_open` check — there's no `_shutter_open` global because the operator
+carries that state for you. `flat_map(write_pv(...))` is the PV write. Nothing here is a
+new concept; it's the loop everyone already writes, minus the bookkeeping.
+
+And because `health` ([facility.py](demo/synchrotron-beamline/facility.py)) is `share()`d,
+the abort-trigger and the per-projection health gate elsewhere in the same demo subscribe
+to that identical stream — one poll, three consumers, no second `DeviceProxy`, no thread to
+launch or join. That's the trade this whole suite is making: the syntax costs you a day to
+get used to; the bookkeeping, thread lifecycles, and hand-rolled fan-out it removes cost you
+every incident afterward.
+
+**See it animated, marble-diagram style, next to the live dashboard:**
+[docs/reactive-primer](docs/reactive-primer/index.html).
+
+---
+
 ## About
 
 Every scientific control system framework — EPICS, Tango, TINE, DOOCS — already produces the
