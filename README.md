@@ -24,7 +24,7 @@ Every control-room engineer has written this. It usually looks like a thread, a 
 and a comparison against the last-known value:
 
 ```python
-# "old style" — manual polling loop + bookkeeping
+# "imperative style" — manual polling loop + bookkeeping
 _shutter_open = None            # last known state, so we don't rewrite the PV every tick
 _stop = threading.Event()
 
