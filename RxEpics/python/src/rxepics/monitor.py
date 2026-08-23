@@ -11,6 +11,18 @@ from rxepics.errors import PvUpdateError
 
 log = logging.getLogger(__name__)
 
+# caproto's asyncio client stores subscription callbacks by *weakref*
+# (CallbackHandler.add_callback). A closure kept alive only via the chain
+# subscribe() -> dispose -> AutoDetachObserver._subscription is not enough:
+# that chain is a reference *cycle* back through the closure's own captured
+# `observer` (== the AutoDetachObserver), and every example in this library
+# discards the Disposable returned by .subscribe() — so once nothing
+# external holds that cycle, a gc pass reaps it and the weakref dies with
+# it, silently dropping the subscription. Pinning the callback here, keyed
+# by identity, keeps it alive independent of what the Rx observer graph
+# does; dispose() unpins it.
+_KEEPALIVE: set = set()
+
 
 def _monitor_updates(pv_name: str, ctx: Context, handler) -> rx.Observable:
     """Shared CA-subscription plumbing for the update-driven observables.
@@ -28,11 +40,8 @@ def _monitor_updates(pv_name: str, ctx: Context, handler) -> rx.Observable:
 
     def subscribe(observer, scheduler=None):
         ca_sub = None
+        disposed = False
 
-        # caproto's asyncio client calls subscription callbacks as
-        # func(sub, response) and stores them by weakref (CallbackHandler);
-        # a bare closure with no other referent would be garbage-collected
-        # and silently deregistered, so it must be kept alive explicitly.
         def callback(sub, response):
             handler(observer, response)
 
@@ -40,15 +49,20 @@ def _monitor_updates(pv_name: str, ctx: Context, handler) -> rx.Observable:
             nonlocal ca_sub
             try:
                 (pv,) = await ctx.get_pvs(pv_name)
+                if disposed:
+                    return
                 ca_sub = pv.subscribe()
                 ca_sub.add_callback(callback)
+                _KEEPALIVE.add(callback)
             except CaprotoError as exc:
                 observer.on_error(exc)
 
         asyncio.ensure_future(_start())
 
         def dispose():
-            callback  # keep the strong reference alive until disposal (see note above)
+            nonlocal disposed
+            disposed = True
+            _KEEPALIVE.discard(callback)
             if ca_sub is not None:
                 asyncio.ensure_future(ca_sub.clear())
 
