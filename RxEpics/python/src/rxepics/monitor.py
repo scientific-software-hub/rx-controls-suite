@@ -1,9 +1,13 @@
 """CA monitor as a push Observable."""
 
 import asyncio
+import logging
 
 import reactivex as rx
+from caproto import CaprotoError
 from caproto.asyncio.client import Context
+
+log = logging.getLogger(__name__)
 
 
 def monitor_pv(pv_name: str, ctx: Context) -> rx.Observable:
@@ -11,16 +15,36 @@ def monitor_pv(pv_name: str, ctx: Context) -> rx.Observable:
 
     The CA subscription is created lazily on the first subscriber.
     Disposing the subscription clears the CA monitor.
+
+    A value that fails to convert, or arrives with a non-normal CA status, is
+    logged at WARNING on ``rxepics.monitor`` and skipped — it does not
+    terminate the stream. Use :func:`rxepics.errors.monitor_errors` to observe
+    these failures as messages instead of log lines. Only a *setup* failure
+    (the PV cannot be located, or a subscription cannot be created) is
+    terminal and reaches ``on_error``.
     """
 
     def subscribe(observer, scheduler=None):
         ca_sub = None
 
-        def callback(response):
+        # caproto's asyncio client calls subscription callbacks as
+        # func(sub, response) and stores them by weakref (CallbackHandler);
+        # a bare closure with no other referent would be garbage-collected
+        # and silently deregistered, so it must be kept alive explicitly.
+        def callback(sub, response):
             try:
-                observer.on_next(float(response.data[0]))
+                if response.status.success:
+                    observer.on_next(float(response.data[0]))
+                else:
+                    log.warning(
+                        "%s: non-normal CA status on update: %s",
+                        pv_name, response.status,
+                    )
             except Exception:
-                pass
+                log.warning(
+                    "%s: failed to convert monitor update %r", pv_name, response,
+                    exc_info=True,
+                )
 
         async def _start():
             nonlocal ca_sub
@@ -28,14 +52,15 @@ def monitor_pv(pv_name: str, ctx: Context) -> rx.Observable:
                 (pv,) = await ctx.get_pvs(pv_name)
                 ca_sub = pv.subscribe()
                 ca_sub.add_callback(callback)
-            except Exception as exc:
+            except CaprotoError as exc:
                 observer.on_error(exc)
 
         asyncio.ensure_future(_start())
 
         def dispose():
+            callback  # keep the strong reference alive until disposal (see note above)
             if ca_sub is not None:
-                ca_sub.clear()
+                asyncio.ensure_future(ca_sub.clear())
 
         return dispose
 
