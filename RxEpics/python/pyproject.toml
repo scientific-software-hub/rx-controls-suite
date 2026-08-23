@@ -14,8 +14,18 @@ dependencies = [
     "reactivex>=4.0",
 ]
 
+[project.optional-dependencies]
+dev = ["pytest"]
+
 [project.urls]
 Repository = "https://github.com/scientific-software-hub/rx-controls-suite"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/rxepics"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "integration: spawns a real caproto IOC subprocess (slow, ~60s; run with -m integration)",
+]
+addopts = "-m 'not integration'"
