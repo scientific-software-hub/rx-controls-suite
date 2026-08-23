@@ -31,6 +31,30 @@ The core claim: EPICS is already a streaming system. Channel Access monitors, DB
 
 **caproto arrays.** caproto always returns `data` as a numpy array. Every primitive takes `float(reading.data[0])`, so scalars flow through the pipeline as Python floats. If you need array PVs you can call caproto directly and wrap the result in `rx.of()`.
 
+**Resilience — errors as messages, not exceptions that stop the process.**
+This is the design principle behind the suite (Khokhriakov et al., *J. Synchrotron
+Rad.* 29, 644–653, 2022), and it draws a specific line here: Rx's `on_error` is a
+*terminal* notification, so routing a transient failure through it would mean the
+failure that ends the monitor. RxEpics instead splits failures by what they mean:
+
+- A **setup** failure (the PV cannot be located, a subscription cannot be created)
+  is terminal — the stream really is over — and reaches `on_error`, exactly as
+  before.
+- A **per-update** failure (an unconvertible payload, a non-normal CA status) is a
+  *message*. `monitor_pv` logs it at WARNING and keeps running;
+  `monitor_errors(pv, ctx)` carries it as a `PvUpdateError` value on its own
+  stream instead, for callers who want to react to it in-band.
+- A **connection transition** is likewise a message, on `connection_status(pv, ctx)`
+  — never an error.
+
+**Reconnect is caproto's job, not this library's.** A live IOC kill/restart test
+(`tests/test_resilience_ioc.py`) proves caproto re-arms a dropped CA subscription
+on its own: disconnect is detected in roughly 1–3 s, and the monitor value stream
+resumes within seconds to ~15 s of the IOC returning, depending on CA search
+backoff timing — with no client-side action. `monitor_pv` needs no reconnect
+operator. The single-shot paths (`read_pv`/`write_pv`) *do* complete on failure,
+so `retry_with_backoff()` is provided for those.
+
 ---
 
 ## Directory layout
@@ -39,14 +63,19 @@ The core claim: EPICS is already a streaming system. Channel Access monitors, DB
 RxEpics/python/
 ├── src/rxepics/            ← installable library
 │   ├── __init__.py         ← public API: read_pv, write_pv, monitor_pv,
+│   │                            monitor_errors, connection_status,
+│   │                            retry_with_backoff, PvUpdateError,
 │   │                            EpicsContext, EpicsClient
 │   ├── channel.py          ← read_pv()
 │   ├── channel_write.py    ← write_pv()
-│   ├── monitor.py          ← monitor_pv()
+│   ├── monitor.py          ← monitor_pv(), monitor_errors()
+│   ├── errors.py           ← PvUpdateError
+│   ├── connection.py       ← connection_status()
+│   ├── retry.py            ← retry_with_backoff()
 │   ├── context.py          ← EpicsContext singleton
 │   └── client.py           ← EpicsClient fluent builder
 │
-├── examples/               ← 12 standalone scripts, one pattern each
+├── examples/               ← 15 standalone scripts, one pattern each
 │   ├── README.md           ← detailed per-example documentation
 │   ├── poll_pv.py          ← interval → flat_map(read)
 │   ├── monitor_pv.py       ← push subscription, no polling
@@ -59,7 +88,19 @@ RxEpics/python/
 │   ├── pv_sliding_average.py ← ops.buffer_with_count
 │   ├── pv_running_stats.py ← ops.scan — online statistics
 │   ├── pv_backpressure.py  ← drop / latest / buffer strategies
-│   └── pv_stats.py         ← take(N) → to_list → statistics
+│   ├── pv_stats.py         ← take(N) → to_list → statistics
+│   ├── connection_status.py ← CA link state as a stream
+│   ├── retry_pv.py         ← retry_with_backoff on read_pv
+│   └── resilient_monitor.py ← values + errors + link state merged
+│
+├── tests/                  ← pytest suite (fakes-based, fast by default)
+│   ├── conftest.py         ← fakes modeling caproto's real asyncio contract
+│   ├── ioc.py               ← minimal caproto IOC for the integration test
+│   ├── test_monitor.py     ← monitor_pv values, contract regressions, GC survival
+│   ├── test_errors.py      ← monitor_errors
+│   ├── test_connection.py  ← connection_status
+│   ├── test_retry.py       ← retry_with_backoff
+│   └── test_resilience_ioc.py ← @pytest.mark.integration: real IOC kill/restart
 │
 ├── demo/tomography/        ← full beamline acquisition demo
 │   ├── tomography.db       ← EPICS database: rotation stage, detector,
@@ -154,7 +195,10 @@ and zero intermediate variables.
 All public names are importable from `rxepics` directly:
 
 ```python
-from rxepics import read_pv, write_pv, monitor_pv, EpicsContext, EpicsClient
+from rxepics import (
+    read_pv, write_pv, monitor_pv, EpicsContext, EpicsClient,
+    monitor_errors, connection_status, retry_with_backoff, PvUpdateError,
+)
 ```
 
 ### `read_pv(pv_name, ctx) → rx.Observable`
@@ -205,6 +249,41 @@ monitor_pv("TEST:CALC", ctx).pipe(
     ops.buffer_with_count(5, 1),
     ops.map(lambda w: sum(w) / len(w)),
 ).subscribe(on_next=lambda avg: print(f"smoothed: {avg:.4f}"))
+```
+
+### `monitor_errors(pv_name, ctx) → rx.Observable`
+
+Push subscription of `PvUpdateError` — one value per per-update failure on
+*pv_name* (bad conversion, non-normal CA status). Shares its CA subscription
+with `monitor_pv` on the same PV. Never completes; never calls `on_error` for
+a per-update failure — only a setup failure is terminal, matching `monitor_pv`.
+
+```python
+monitor_errors("TEST:CALC", ctx).subscribe(
+    on_next=lambda err: log.warning("bad update: %s", err),
+)
+```
+
+### `connection_status(pv_name, ctx) → rx.Observable`
+
+Push subscription of `bool` — `True` while *pv_name* is connected over CA.
+Emits the current state immediately on subscribe (synthetic `False` if the PV
+has never connected), then one value per transition. Never completes.
+
+```python
+connection_status("TEST:CALC", ctx).subscribe(on_next=set_link_led)
+```
+
+### `retry_with_backoff(max_retries=3, base_delay_ms=500, scheduler=None)`
+
+Operator for `read_pv` / `write_pv`: retries with exponential backoff, then
+lets the original error through `on_error` once exhausted. Requires a
+scheduler bound to the same loop the source was created on.
+
+```python
+read_pv("TEST:CALC", ctx).pipe(
+    retry_with_backoff(max_retries=5, scheduler=scheduler)
+).subscribe(on_next=print, on_error=print)
 ```
 
 ### `EpicsContext`
@@ -269,6 +348,9 @@ and annotated key code for every example.
 | `pv_running_stats.py` | Live streaming statistics, O(1) memory | `scan` |
 | `pv_backpressure.py` | Explicit overload strategies | `sample · filter · buffer` |
 | `pv_stats.py` | Collect N samples, compute statistics, exit | `take · to_list` |
+| `connection_status.py` | CA link state as a stream | `connection_status` |
+| `retry_pv.py` | Resilient single-shot read | `retry_with_backoff` |
+| `resilient_monitor.py` | Values + errors + link state, survives an IOC restart | `merge · monitor_errors · connection_status` |
 
 ### Operator quick-reference
 
@@ -427,6 +509,21 @@ If you prefer not to install the package, prefix with `PYTHONPATH`:
 ```bash
 PYTHONPATH=src python examples/poll_pv.py TEST:CALC 500
 ```
+
+### Running the tests
+
+```bash
+uv pip install -e ".[dev]"
+pytest RxEpics/python/tests -q                # fast: fakes-based unit tests, ~2s
+pytest RxEpics/python/tests -q -m integration  # slow: spawns a real IOC, ~5-30s
+```
+
+Plain `pytest` (no `-m`) excludes the `integration`-marked test by default —
+see `pyproject.toml`. The fakes in `tests/conftest.py` model caproto's real
+asyncio-client contract (2-arg weakref-backed callbacks, an async
+`Subscription.clear()`, `connection_state_callback`'s replay-on-subscribe
+behavior) deliberately, not for convenience — they are what caught the two
+resilience bugs this library's monitor path originally had.
 
 ### Package structure
 

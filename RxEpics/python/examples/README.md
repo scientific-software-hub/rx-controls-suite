@@ -359,3 +359,85 @@ python pv_backpressure.py TEST:CALC
 python pv_backpressure.py TEST:CALC 100 600 --strategy drop
 python pv_backpressure.py TEST:CALC 100 600 --strategy buffer --buffer-size 5
 ```
+
+---
+
+## 15. Connection status — CA link state as a stream
+
+**Watch a PV's Channel Access connection transitions instead of guessing from silence.**
+
+`connection_status()` reports `False` immediately if the PV has never connected
+(otherwise nothing would ever tell you), then one `True`/`False` per transition.
+Stop and restart the IOC in another shell while this runs to see it react.
+
+```shell
+python connection_status.py TEST:CALC
+```
+
+Arguments: `<pv_name>`
+
+Key code:
+```python
+connection_status(pv_name, ctx).subscribe(
+    on_next=lambda up: print("UP" if up else "DOWN"),
+    scheduler=scheduler,
+)
+```
+
+---
+
+## 16. Retry with backoff — resilient single-shot reads
+
+**`read_pv`/`write_pv` are single-shot; a failure ends the observable. This
+composes a retry on top instead of hand-rolling one.**
+
+`retry_with_backoff()` retries the underlying read/write with exponential
+delay, then lets the original error through once retries are exhausted. Not
+for monitors — see the next example for why they don't need it.
+
+```shell
+python retry_pv.py TEST:CALC
+python retry_pv.py TEST:DOES_NOT_EXIST 5 250
+```
+
+Arguments: `<pv_name> [max-retries=3] [base-delay-ms=500]`
+
+Key code:
+```python
+read_pv(pv_name, ctx).pipe(
+    retry_with_backoff(max_retries=5, base_delay_ms=250, scheduler=scheduler)
+).subscribe(on_next=print, on_error=print, scheduler=scheduler)
+```
+
+---
+
+## 17. Resilient monitor — errors and status as messages, not exceptions
+
+**The full resilience story in one script: values, per-update errors, and
+link state, merged into one stream that survives an IOC restart.**
+
+Run it, then in another shell:
+
+```shell
+docker compose stop epics-ioc
+docker compose start epics-ioc
+```
+
+The link goes DOWN, no traceback, no dead process; once the IOC returns the
+link goes UP and values resume with no client-side action — caproto re-arms
+the CA subscription on its own.
+
+```shell
+python resilient_monitor.py TEST:CALC
+```
+
+Arguments: `<pv_name>`
+
+Key code:
+```python
+rx.merge(
+    monitor_pv(pv_name, ctx).pipe(ops.map(lambda v: f"value  {v}")),
+    monitor_errors(pv_name, ctx).pipe(ops.map(lambda e: f"error  {e}")),
+    connection_status(pv_name, ctx).pipe(ops.map(lambda up: f"link   {'UP' if up else 'DOWN'}")),
+).subscribe(on_next=print, scheduler=scheduler)
+```

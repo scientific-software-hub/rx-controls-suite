@@ -23,7 +23,11 @@ src/rxepics/
   context.py            Singleton caproto async Context
   channel.py            Single-shot read → Observable
   channel_write.py      Single-shot write → Observable
-  monitor.py            Push Observable wrapping caproto subscribe
+  monitor.py            Push Observables: monitor_pv() (values), monitor_errors()
+                         (per-update failures as messages) — share one CA subscription
+  errors.py             PvUpdateError
+  connection.py         connection_status() — CA connection state as Observable[bool]
+  retry.py              retry_with_backoff() — for read_pv/write_pv only
   client.py             Fluent builder — EpicsClient
 examples/
   read_pv.py
@@ -36,6 +40,13 @@ examples/
   pv_throttle.py
   pv_backpressure.py
   pv_pipeline.py
+  connection_status.py
+  retry_pv.py
+  resilient_monitor.py
+tests/
+  conftest.py            Fakes modeling caproto's real asyncio contract
+  ioc.py                 Minimal caproto IOC for the integration test
+  test_*.py              Fast by default; -m integration for the IOC test
 docker-compose.yml        softIoc with test PVs
 pyproject.toml
 ```
@@ -106,3 +117,44 @@ Start the IOC: `docker compose up`
 4. `monitor.py` + inline monitor example
 5. Remaining examples
 6. `client.py` fluent builder + full `pv_pipeline.py`
+
+## caproto gotchas (hard-won, do not rediscover)
+
+Verified against caproto 1.3.0. Do not assume a different version behaves the
+same without re-checking the installed source.
+
+- **The asyncio client's subscription callback is `func(sub, response)`, not
+  `func(response)`.** Unlike `caproto.sync.client` and
+  `caproto.threading.client`, `caproto.asyncio.client.Subscription.add_callback`
+  has no back-compat signature adapter. A 1-arg callback raises `TypeError` on
+  every dispatch, inside caproto's `user_callback_executor`, where it is
+  silently swallowed — the monitor appears to just emit nothing.
+- **caproto stores subscription and connection-state callbacks by `weakref`**
+  (`CallbackHandler.add_callback`). A closure whose only strong referent is
+  the chain `subscribe() -> dispose -> AutoDetachObserver` is not actually
+  safe: that chain is a reference *cycle* back through the closure's own
+  captured `observer`, and every example in this library discards the
+  Disposable `.subscribe()` returns (they run until Ctrl+C). Once nothing
+  external holds that cycle, a `gc.collect()` pass reaps it and the
+  weakref-backed callback dies with it. `monitor.py` and `connection.py` pin
+  the callback in a module-level `_KEEPALIVE` set until `dispose()` explicitly
+  unpins it, independent of the Rx observer graph.
+- **`Subscription.clear()` is a coroutine** in the asyncio client (unlike the
+  sync/threading clients). Calling it without `asyncio.ensure_future`/`await`
+  produces a `RuntimeWarning: coroutine ... was never awaited` and never
+  actually tears down the CA subscription.
+- **`pv.connection_state_callback.add_callback(f, run=True)` replays the
+  current state to a late subscriber — but only if the PV has already
+  connected at least once.** A PV that has never connected fires nothing.
+  `connection_status()` synthesizes an initial `False` before registering, so
+  the observable stays total instead of silent until first connect.
+- **caproto auto-resubscribes a dropped monitor.** Verified by killing and
+  restarting an IOC against one long-lived `Subscription`: disconnect is
+  detected in ~1–3 s; values resume within seconds to ~15 s of the IOC
+  returning (CA search retry backoff) — the subscription is re-armed
+  server-side automatically, no client action needed. Do not add a reconnect
+  operator for monitors; `tests/test_resilience_ioc.py` is the proof.
+- **`pv.subscribe(**kwargs)` returns the same `Subscription` object for
+  identical parameters** (`PV.subscriptions` keyed by the bound arg
+  signature). `monitor_pv` and `monitor_errors` on the same PV therefore
+  share one CA subscription — verified by checking `len(pv.subscriptions)`.
