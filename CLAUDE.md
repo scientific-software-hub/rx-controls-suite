@@ -209,6 +209,10 @@ itself ends **Failed** with the reason, not just a buried return value.
 **Run:** `docker compose up -d` (Prefect server, `:4200`) alongside the
 synchrotron-beamline stack, then `python prefect_flow.py`.
 
+**Companion talk:** `docs/prefect-talk/` — a manager/beamline-scientist-facing slide
+deck (screenshots of both scenarios in the Prefect UI, no code), separate from
+`prefect-walkthrough.html`'s engineering deep-dive above.
+
 ### demo/reactive-query-cache
 
 Demonstrates an **app-level cache** built from the suite's own Rx primitives — conceptually a TanStack-Query `QueryClient`, implemented with `ReplaySubject` + ref-count + a gc grace timer.

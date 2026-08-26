@@ -381,6 +381,7 @@ work is headed — see the [About](#about) section.
 | EPICS (Python) | slides | [docs/epics-talk/](docs/epics-talk/) |
 | RxEpics/cpp | slides | [docs/rxepics-cpp-talk/](docs/rxepics-cpp-talk/) |
 | Combined demo (Storage Ring × Beamline) | slides | [docs/combined-demo-talk/](docs/combined-demo-talk/) |
+| Prefect orchestration (managers & beamline scientists) | slides | [docs/prefect-talk/](docs/prefect-talk/) |
 | Reactive Programming for Tango Controls (Tango Users Meeting) | recording | [YouTube](https://youtu.be/9CyGPIwJlxc) · [slides](docs/tango-talk/) |
 | RxTango/python | slides | [docs/rxtango-python-talk/](docs/rxtango-python-talk/) |
 | RxTango/cpp | slides | [docs/rxtango-cpp-talk/](docs/rxtango-cpp-talk/) |
