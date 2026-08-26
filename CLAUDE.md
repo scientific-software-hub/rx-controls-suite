@@ -140,6 +140,75 @@ reducible to this docker demo).
   connections keep reading happily — the contradiction is the tell. Fix:
   `docker restart storage-ring-sim-server` so it re-registers with the DB.
 
+### demo/workflow-engines
+
+The guarded tomography scan orchestrated by **Prefect** instead of a hand-rolled
+script or Bluesky's `RunEngine` — the first data point outside the "scientific
+orchestrator" family, stress-testing the suite's "we feed orchestrators, we don't
+replace them" claim from a general-purpose-Python angle. An n8n variant (no
+in-process Python option at all — Pyodide is legacy, n8n 2 dropped it) is next;
+its design (n8n owns the sweep loop via HTTP+SSE against a `scan_core.py`-backed
+service) is recorded in `workflow-engines/README.md`'s closing section.
+
+**Files:**
+- `scan_core.py` — orchestrator-agnostic: reuses `guarded_acquire_projection`
+  from `synchrotron-beamline/guarded_scan.py` unmodified; adds `sweep_angles`/
+  `sweep_frames` (cut one scan into N sweeps), `ScanEvent`/`to_events` (a flat
+  frame/beam_ok/beam_low/interlock stream), `sustained_low` (tier-2 beam-loss
+  watchdog), `ScanRun` (the HDF5 file). No Prefect import.
+- `rx_prefect.py` — the bridge, four adapters parallel to `bluesky/rx_bluesky.py`'s:
+  `drain` (rx loop thread → task thread boundary), `log_event`, `ProgressTracker`,
+  `sweep_table`, `pause_until_healthy` (→ `resume_flow_run`)
+- `prefect_flow.py` — `prepare_beamline → run_sweep ×N → finalize`
+
+**Key design:** two-tier beam loss — the existing per-projection `wait_healthy`
+gate absorbs ordinary dropouts invisibly; `sustained_low` escalates a *sustained*
+one to `pause_flow_run()` (not `suspend_flow_run` — suspend tears the process
+down, killing the open HDF5 handle and the rx loop thread), with an rx
+subscription armed before the pause auto-calling `resume_flow_run` the instant
+beam recovers. A vacuum-burst interlock re-raises after teardown so the flow run
+itself ends **Failed** with the reason, not just a buried return value.
+
+**Known gotchas (hard-won, do not rediscover):**
+- **Prefect's run context is thread-local; the rx loop thread doesn't have one.**
+  `get_run_logger()` and every artifact function key off
+  `prefect.context.get_run_context()`, which only exists on the thread that
+  entered the task/flow. rx subscriptions all run on `RxLoop`'s dedicated
+  background thread (rxepics/rxtango need a running loop where they subscribe).
+  Calling a Prefect SDK function from an `on_next` callback that fires on the rx
+  loop either raises `MissingContextError` or — worse — silently no-ops (see
+  next gotcha). Fix: `rx_prefect.drain()` only ever enqueues on the rx loop
+  thread; the task's own thread dequeues and invokes every callback, so all
+  Prefect calls happen with a valid run context.
+- **`async_dispatch`'s loop-detection trap.** `pause_flow_run`, `resume_flow_run`,
+  and the artifact creators are wrapped in `@async_dispatch`, which — on
+  `MissingContextError` — falls back to `asyncio.get_running_loop()` to decide
+  sync vs. async. The rx loop thread always has one running (that's how
+  `AsyncIOThreadSafeScheduler` dispatches), so the check wrongly concludes
+  "async context" and returns an **unawaited coroutine**: nothing raises, the
+  call is just a no-op. `resume_flow_run` can't go through `drain()` either — it
+  fires while the *flow's* thread is blocked inside `pause_flow_run()`. Fix:
+  `pause_until_healthy` hops onto a private `ThreadPoolScheduler(1)` first — a
+  plain worker thread with no run context and no running loop — where the same
+  check correctly picks the sync path.
+- **A `share()`d source's downstream must complete on its own lifetime, not its
+  perpetual upstream's.** `to_events` merges per-sweep `frames` with
+  beam/interlock branches derived from `health` (the ring poll, shared and
+  running for the whole flow, never completing). A bare `rx.merge` never
+  completes either, since `rx.merge` needs *every* source to — so anything
+  blocking on `on_completed` (`drain`) hangs forever *after* every frame in the
+  sweep has already arrived, which reads exactly like a mid-scan freeze and
+  isn't one. Fix: `to_events` applies `take_until(_completion_of(frames))`, safe
+  because a `Subject`-backed `share()` delivers a value to every observer before
+  it delivers the completion that follows it — no data loss.
+- **No `prefect/` subdirectory.** `prefect_flow.py` puts its own parent on
+  `sys.path` to import `scan_core`; a sibling directory literally named
+  `prefect/` would shadow the real `prefect` package as an implicit namespace
+  package. Layout stays flat for exactly this reason.
+
+**Run:** `docker compose up -d` (Prefect server, `:4200`) alongside the
+synchrotron-beamline stack, then `python prefect_flow.py`.
+
 ### demo/reactive-query-cache
 
 Demonstrates an **app-level cache** built from the suite's own Rx primitives — conceptually a TanStack-Query `QueryClient`, implemented with `ReplaySubject` + ref-count + a gc grace timer.

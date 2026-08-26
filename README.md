@@ -345,6 +345,21 @@ the Tango storage ring would otherwise be invisible to it. A small bridge (`rx_b
 Rx `Observable`s to Bluesky `Status`/`Signal`/document-stream protocols in four functions; the
 suspenders, pause/abort logic, and HDF5 archiving from the non-Bluesky demo are unchanged.
 
+### Prefect variant
+
+[`demo/workflow-engines/`](demo/workflow-engines/) drives the same guarded scan from a
+**Prefect** flow instead of Bluesky's `RunEngine` — the first data point outside the
+"scientific orchestrator" family. `prepare_beamline → run_sweep ×N → finalize` gives a
+visible DAG; a two-tier beam-loss design lets ordinary dropouts stay invisible while a
+sustained one pauses the flow run for an operator (auto-resuming the moment beam
+recovers), and a vacuum-burst interlock ends the run **Failed** with the reason attached.
+Live feedback lands directly in the Prefect UI — logs, a progress artifact, one table per
+sweep — via a bridge (`rx_prefect.py`) that also documents a genuinely hard-won gotcha:
+Prefect's run context is thread-local and doesn't cross into the rx event loop's own
+thread, so every SDK call has to be marshalled back across that boundary. An n8n variant
+— no in-process Python option at all, so the scan is exposed as an HTTP+SSE service
+instead — is next.
+
 ### Reactive Query Cache
 
 [`demo/reactive-query-cache/`](demo/reactive-query-cache/) demonstrates an app-level cache built
