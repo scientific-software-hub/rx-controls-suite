@@ -156,3 +156,40 @@ record(mbbi, "TOMO:SCAN:STATUS") {
     field(THST, "ABORTED")
     field(VAL,  "0")
 }
+
+# =============================================================================
+# Facility health mirror — written by demo/dectris-integration/facility_bridge.py
+#
+# The storage ring in demo/synchrotron-beamline is a Tango device; these PVs
+# let an EPICS-only client (RxDECTRIS's EpicsFacility) see the *same*
+# simulated ring the Tango-native TangoFacility sees, without an EPICS
+# gateway. Additive to this file — no existing record is touched, so the
+# original tomography demo is unaffected whether or not the bridge is
+# running.
+# =============================================================================
+
+record(ao, "FAC:CURRENT") {
+    field(DESC, "Facility mirror - beam current")
+    field(EGU,  "mA")
+    field(VAL,  "0")
+    field(PREC, "2")
+}
+
+record(longout, "FAC:INTERLOCK") {
+    field(DESC, "Facility mirror - interlock count")
+    field(VAL,  "0")
+}
+
+record(ao, "FAC:ORBIT_X") {
+    field(DESC, "Facility mirror - orbit deviation")
+    field(EGU,  "um")
+    field(VAL,  "0")
+    field(PREC, "2")
+}
+
+record(bo, "FAC:BEAM_OK") {
+    field(DESC, "Facility mirror - is_healthy flag")
+    field(ZNAM, "NOT_OK")
+    field(ONAM, "OK")
+    field(VAL,  "0")
+}

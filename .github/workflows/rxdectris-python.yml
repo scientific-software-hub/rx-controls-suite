@@ -1,0 +1,41 @@
+name: RxDectris/python
+
+on:
+  push:
+    paths:
+      - 'RxDectris/python/**'
+  pull_request:
+    paths:
+      - 'RxDectris/python/**'
+
+defaults:
+  run:
+    working-directory: RxDectris/python
+
+jobs:
+  test:
+    name: Test (mock-only, no simulator needed)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Install dependencies
+        run: uv pip install --system -e ".[dev]"
+
+      - name: Import check
+        run: python -c "import rxdectris; print('rxdectris imports OK:', rxdectris.__all__)"
+
+      - name: Test
+        run: pytest tests -q
+
+      - name: Build wheel
+        run: uv build

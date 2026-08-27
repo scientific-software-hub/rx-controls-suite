@@ -19,10 +19,13 @@ rx-controls-suite/
     cpp/        ← new (CMake + FetchContent, RxCpp, PVXS; header-only)
   RxTine/
     java/       ← new (jbang, RxJava3, TINE Java API)
+  RxDectris/
+    python/     ← new (uv, RxPY v4, httpx + pyzmq/CBOR; wraps DECTRIS SIMPLON — detector, not facility)
   demo/
     synchrotron-beamline/   ← combined demo: Tango ring + EPICS beamline, 4 reactive patterns
       bluesky/              ← same scan under a Bluesky RunEngine; rx↔Bluesky bridge (RxStatus/RxSignal/rx_wait/documents)
     reactive-query-cache/   ← app-level Rx cache demo: QueryCache dedup across UI components
+    dectris-integration/    ← simulated DECTRIS detector + D.LAB mock, gated by either facility adapter
   (RxEpics/java, RxTine/python — future)
 ```
 
@@ -101,6 +104,34 @@ Wraps [PVXS](https://github.com/mdavidsaver/pvxs) (`pvxs::client::Context`) with
 - `EpicsClient` — fluent builder (no `execute` — EPICS has no commands)
 
 **Key design:** No commands — write to a command PV instead. PVXS Monitor lifetime managed via `shared_ptr` in cleanup lambda. First EPICS subproject in the suite with a reactive conformance test.
+
+### RxDectris/python
+
+Wraps a DECTRIS **SIMPLON** detector (REST config/status/command + a real Stream V2
+ZeroMQ/CBOR socket) with `Observable[T]` via RxPY v4, managed with `uv`. Unlike every
+other sub-project, the platform on the other end is a **detector**, not a facility
+control system — this is the seam a facility-orchestration demo (`demo/dectris-integration/`)
+plugs into.
+
+**Layout (`src/rxdectris/`):** `context.py` (`DetectorContext`, one httpx client + one
+zmq PULL socket per DCU base URL), `config.py`/`status.py`/`command.py` (single-shot REST
+primitives — `read_config`, `write_config`, `read_status`, `send_command` +
+`initialize`/`arm`/`trigger`/`disarm`/`abort`/`cancel`), `stream.py` (`stream2` — push
+Observable of `SeriesStart`/`Frame`/`SeriesEnd`, `configure_stream`), `monitor.py`
+(`monitor_images` — the HTTP Monitor subsystem, `mode="next"` vs `mode="monitor"`),
+`client.py` (`DectrisClient` fluent builder), `recipes.py` (`acquire_series` — the
+lifecycle recipe: configure → enable stream → subscribe *before* arm → arm → trigger →
+frames until `SeriesEnd` → disarm, with unconditional abort-on-error/-disposal teardown).
+
+**Key design:** Stream V2's `start` is emitted by `arm`, not `trigger` — `acquire_series`
+subscribes to the socket before arming for exactly this reason. Config writes can cascade
+(`count_time` forcing `frame_time` up) and the wrapper surfaces SIMPLON's own "changed
+parameters" response rather than hiding it. `abort` (immediate) and `cancel` (finishes the
+image in flight) are distinct verbs, not aliases. See
+[`RxDectris/python/README.md`](RxDectris/python/README.md)'s "what is simulated / what
+is not" table — the demo's `simplon_sim` is built against the public *SIMPLON 1.8 API
+documentation* only, and the D.LAB mock (`demo/dectris-integration/dlab_sim/`) is
+explicitly conceptual since no public D.LAB endpoint spec exists.
 
 ### demo/synchrotron-beamline/bluesky
 
@@ -228,6 +259,83 @@ Demonstrates an **app-level cache** built from the suite's own Rx primitives —
 **Transport note:** one `EventSource` per component hits the browser HTTP/1.1 ~6-connection limit at ~5 components. For more, replace with a single multiplexed WebSocket `/ws`; `QueryCache` is unchanged.
 
 **Run:** `uv run --with fastapi --with "uvicorn[standard]" python querycache_dashboard.py` (requires the synchrotron-beamline docker stack).
+
+### demo/dectris-integration
+
+Built for a specific commercial meeting (DECTRIS Ltd.): puts a simulated **DECTRIS
+detector** into the synchrotron-beamline story so a detector-vendor audience doesn't have
+to mentally translate a Tango/EPICS-only demo onto their own products. The reveal is the
+same one `demo/synchrotron-beamline` already makes, in DECTRIS's vocabulary: swap
+`--facility tango` for `--facility epics` and the experiment recipe is unchanged.
+
+**Files:**
+- `simplon_sim/` — FastAPI SIMPLON simulator: `state.py` (the state machine — `na → idle →
+  ready → acquire → idle`, config cascades, `abort` vs `cancel`, fault injection) + `app.py`
+  (routes + the real Stream V2 ZeroMQ PUSH/CBOR socket on `:31001`)
+- `dlab_sim/` — a conceptual D.LAB-shaped mock (Projects/Datasets/Jobs); **not** a
+  reproduction of the real D.LAB API — none is public
+- `facilities.py` — `FacilityHealth`, the `Facility` protocol, `TangoFacility` (wraps
+  `demo/synchrotron-beamline/facility.py::ring_health` unmodified), `EpicsFacility` (reads
+  the `FAC:*` PV mirror), `FakeFacility` (scripted, for adapter-invariance tests). Named
+  `facilities.py`, plural — `facility.py` was already taken by the sibling demo's module,
+  and both land on `sys.path` simultaneously
+- `facility_bridge.py` — mirrors the Tango ring into 4 new `FAC:*` records added to
+  `RxEpics/python/demo/tomography/tomography.db` (additive), so `EpicsFacility` sees the
+  same simulated machine `TangoFacility` sees, with no EPICS gateway
+- `recipes.py` — `wait_until_healthy`, `guarded_by`/`abort_on`, `correlate_with` (per-frame
+  facility stamping → `AcquiredFrame`), `process_with`/`validate_result` (D.LAB stage, with
+  retry), `AcquisitionRun` (HDF5 sink — same indexed-write idiom as
+  `demo/workflow-engines/scan_core.py`'s `ScanRun`, different compound dtype so not the
+  same class)
+- `experiment.py` — the hero pipeline, `--facility epics|tango`
+- `inject_fault.py` — one command for all four fault families (ring scenarios reuse
+  `rxtango.write_attribute` exactly like the sibling demo's script; detector/D.LAB faults
+  are `/_sim/fault` PUTs)
+- `dashboard.py` + `index.html` — FACILITY/DETECTOR/D.LAB status, polls all three services
+  directly (no coupling to `experiment.py`'s process), `:8020`, neon palette matching
+  `demo/synchrotron-beamline/dashboard.html`
+
+**Key design / gotchas (hard-won, do not rediscover):**
+- **Stream V2's `start` fires on `arm`, `end` fires on the internal-trigger-mode
+  auto-disarm** (SIMPLON 1.8 API documentation, not a simplification) — `RxDectris`'s
+  `acquire_series` recipe already handles this; `simplon_sim/state.py` reproduces it
+  faithfully so the demo and the real product agree.
+- **A PUSH socket round-robins across every peer that ever connected, including ones that
+  vanished without a clean disconnect.** Every short-lived demo script here opens a fresh
+  ZeroMQ connection per process; without `SNDTIMEO` on the PUSH socket, one dead peer's full
+  queue can block `emit()` — and therefore every command handler that calls it — hanging the
+  whole simulated detector, not just the stream. Fixed with a 1s `SNDTIMEO` + drop-not-hang
+  in `simplon_sim/app.py`'s lifespan. Running two client processes against the simulator in
+  rapid succession (as opposed to one at a time, as the real demo does) can still show
+  cross-talk between their streams — an inherent property of PUSH/PULL round-robin, not a
+  recipe bug.
+- **`correlate_with` uses `concat_map`, not `flat_map`.** `facility.snapshot()` is an async
+  per-frame read; `flat_map` does not preserve arrival order when inner observables settle
+  out of order, so `SeriesEnd` (`rx.of`, instant) would print before a still-pending frame's
+  correlation. `_CachingFacility` (in `facilities.py`) makes this free: `snapshot()` returns
+  a cached last-value read, not a fresh poll, so serializing via `concat_map` costs no real
+  latency per frame.
+- **`abort_on`'s abort must be inside the `take_until` trigger, not a `do_action` beside
+  it.** A fire-and-forget `abort(ctx).subscribe(...)` next to the cutoff races the rest of
+  the pipeline completing and the caller closing its `DetectorContext` right after — the
+  abort HTTP request can be dropped before it's ever sent, leaving the real detector stuck
+  mid-series. Fix: `trigger.pipe(flat_map(lambda t: abort(ctx).pipe(map(lambda _: t))))` as
+  the `take_until` argument, so the cutoff only fires once abort has actually completed.
+- **A D.LAB job that settles with `status: "failed"` is a value, not an rx error.**
+  `retry_with_backoff` only catches exceptions, so `process_with` has to raise on a failed
+  job status itself, *before* the retry wrapper — not after, via a separately-composed
+  `validate_result()` — or nothing ever retries.
+- **`initialize()` must not clear an injected fault.** Every normal `acquire_series` run
+  calls `initialize()` unconditionally at startup (to recover from a fresh "na" DCU); if
+  that also cleared `_fault_pending`, a fault injected before a run would never be observed.
+  Only an explicit `/_sim/fault {"value":"nominal"}` (or `abort`'s own error-state recovery
+  branch) clears it.
+
+**Run:** `docker compose up -d --build` (includes `demo/synchrotron-beamline`'s stack, plus
+`simplon-sim`/`dlab-sim`), `uv pip install -e RxDectris/python`, then
+`python experiment.py --facility tango --frames 100 --count-time 0.01`. See
+[`demo/dectris-integration/README.md`](demo/dectris-integration/README.md) for the full run
+book and [`demo-script.md`](demo/dectris-integration/demo-script.md) for the meeting sequence.
 
 ## Context & motivation
 

@@ -134,6 +134,7 @@ maturity, and `RxEpics/java` is the next planned sub-project (see [Sub-projects]
 | [RxTango/python](RxTango/python/) | Tango Controls | Python 3.10+ | uv + RxPY v4 + PyTango |
 | [RxTango/cpp](RxTango/cpp/) | Tango Controls | C++17 | CMake + RxCpp + cppTango |
 | [RxTine/java](RxTine/java/) | TINE (DESY) | Java 11+ | jbang + RxJava3 + TINE Java API |
+| [RxDectris/python](RxDectris/python/) | DECTRIS SIMPLON (detector) | Python 3.10+ | uv + RxPY v4 + httpx + pyzmq/CBOR |
 
 ---
 
@@ -368,6 +369,35 @@ from the suite's own Rx primitives — conceptually a TanStack-Query `QueryClien
 same PV/attribute normally means N upstream reads. `QueryCache` coalesces same-key subscriptions
 into one upstream read via `ReplaySubject` + ref-counting + a GC grace timer, so SCADA load stays
 constant as the UI grows.
+
+---
+
+## RxDECTRIS integration demo
+
+[`demo/dectris-integration/`](demo/dectris-integration/) puts a (simulated) **DECTRIS
+detector** into the same reveal: a SIMPLON-shaped simulator (real Stream V2 wire format —
+ZeroMQ + CBOR) plus a conceptual D.LAB-shaped processing mock, orchestrated by one
+experiment recipe — `wait_until_healthy → acquire_series → correlate_with(facility) →
+process_with(dlab)` — that runs unmodified against either facility adapter:
+
+```shell
+cd demo/dectris-integration
+docker compose up -d --build
+python experiment.py --facility tango --frames 100 --count-time 0.01
+python experiment.py --facility epics --frames 100 --count-time 0.01
+```
+
+The only difference between the two runs is the `--facility` flag. Both facility adapters
+observe the *same* simulated storage ring through different control systems (EPICS via a
+small `facility_bridge.py` mirror, Tango directly), so the comparison is a fair one, not two
+demos wearing the same recipe. `inject_fault.py` drives all four fault scenarios (beam loss,
+interlock, detector error, D.LAB processing retry) from one command; `dashboard.py` renders
+FACILITY / DETECTOR / D.LAB status live. See
+[`demo/dectris-integration/README.md`](demo/dectris-integration/README.md) for the
+architecture and what this demo does/doesn't claim, and
+[`demo/dectris-integration/demo-script.md`](demo/dectris-integration/demo-script.md) for the
+meeting-ready walkthrough. The reusable SIMPLON wrapper itself lives at
+[`RxDectris/python`](RxDectris/python/).
 
 ---
 

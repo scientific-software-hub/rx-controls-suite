@@ -1,0 +1,33 @@
+# RxDECTRIS demo stack — the synchrotron-beamline stack (Tango ring + EPICS
+# beamline, unchanged) plus a simulated DECTRIS detector and a conceptual
+# D.LAB mock.
+#
+#   Tango DB / DBDS   →  localhost:10000        (from the included stack)
+#   EPICS CA          →  localhost:5064/5065    (from the included stack)
+#   SIMPLON HTTP      →  localhost:8080
+#   Stream V2 (ZMQ)   →  localhost:31001
+#   D.LAB mock HTTP   →  localhost:8090
+#
+# All host-networked, like the demo it's included from — see
+# demo/synchrotron-beamline/docker-compose.yml's own header for why.
+
+include:
+  - ../synchrotron-beamline/docker-compose.yml
+
+services:
+  simplon-sim:
+    build: ./simplon_sim
+    network_mode: host
+    restart: unless-stopped
+    environment:
+      SIMPLON_HOST: "0.0.0.0"
+      SIMPLON_PORT: "8080"
+      SIMPLON_STREAM_PORT: "31001"
+
+  dlab-sim:
+    build: ./dlab_sim
+    network_mode: host
+    restart: unless-stopped
+    environment:
+      DLAB_HOST: "0.0.0.0"
+      DLAB_PORT: "8090"

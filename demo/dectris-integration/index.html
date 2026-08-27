@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>RxDECTRIS</title>
+<style>
+  :root {
+    --bg:#090d1a; --panel:#0f1629; --card:#141d35; --border:#1e2d4f;
+    --text:#e2e8f0; --muted:#64748b;
+    --cyan:#00d4ff; --green:#10b981; --amber:#f59e0b; --red:#ef4444;
+    --font:'Segoe UI', system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font-family: var(--font);
+  }
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 24px; background: var(--panel); border-bottom: 1px solid var(--border);
+  }
+  header h1 {
+    margin: 0; font-size: 18px; letter-spacing: 0.04em; color: var(--cyan);
+    font-weight: 600;
+  }
+  header .sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  #conn { font-size: 12px; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--border); }
+  #conn.live { color: var(--green); border-color: var(--green); }
+  #conn.stale { color: var(--amber); border-color: var(--amber); }
+
+  main {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px;
+    padding: 24px; max-width: 1200px; margin: 0 auto;
+  }
+  section.card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+    padding: 20px; transition: border-color 0.3s, box-shadow 0.3s;
+  }
+  section.card.alert {
+    border-color: var(--red); box-shadow: 0 0 0 1px var(--red), 0 0 24px -8px var(--red);
+  }
+  section.card h2 {
+    margin: 0 0 16px; font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--muted); font-weight: 600;
+  }
+
+  .row { display: flex; align-items: center; justify-content: space-between; padding: 7px 0; }
+  .row .label { color: var(--muted); font-size: 13px; }
+  .row .value { font-size: 14px; font-weight: 600; }
+
+  .pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600;
+    border: 1px solid var(--border);
+  }
+  .pill .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+  .pill.ok    { color: var(--green); border-color: var(--green); }
+  .pill.warn  { color: var(--amber); border-color: var(--amber); }
+  .pill.bad   { color: var(--red);   border-color: var(--red); animation: pulse 1.1s infinite; }
+  .pill.idle  { color: var(--muted); border-color: var(--border); }
+  .pill.busy  { color: var(--cyan);  border-color: var(--cyan); }
+
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.45; } }
+
+  .metric { font-size: 30px; font-weight: 700; color: var(--cyan); line-height: 1; margin-top: 2px; }
+  .metric .unit { font-size: 13px; color: var(--muted); font-weight: 400; margin-left: 4px; }
+
+  .bar-track { height: 8px; background: var(--panel); border-radius: 999px; overflow: hidden; margin-top: 10px; }
+  .bar-fill { height: 100%; background: var(--cyan); border-radius: 999px; width: 0%; transition: width 0.3s; }
+  .bar-fill.bad { background: var(--red); }
+  .progress-label { display:flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin-top: 6px; }
+
+  .error-box {
+    margin-top: 12px; padding: 10px 12px; border-radius: 8px;
+    background: rgba(239, 68, 68, 0.1); border: 1px solid var(--red);
+    color: var(--red); font-size: 12px; font-family: monospace; display: none;
+  }
+  .error-box.show { display: block; }
+
+  footer {
+    max-width: 1200px; margin: 0 auto; padding: 0 24px 24px; color: var(--muted); font-size: 12px;
+  }
+</style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>RxDECTRIS</h1>
+      <div class="sub">facility &rarr; detector &rarr; D.LAB &mdash; one experiment recipe</div>
+    </div>
+    <div id="conn" class="stale">connecting&hellip;</div>
+  </header>
+
+  <main>
+    <section class="card" id="card-facility">
+      <h2>Facility</h2>
+      <div class="row">
+        <span class="label">Beam</span>
+        <span id="beam-pill" class="pill idle"><span class="dot"></span><span>&mdash;</span></span>
+      </div>
+      <div class="metric" id="current-metric">&mdash;<span class="unit">mA</span></div>
+      <div class="row" style="margin-top: 14px;">
+        <span class="label">Interlock</span>
+        <span id="interlock-pill" class="pill idle"><span class="dot"></span><span>&mdash;</span></span>
+      </div>
+      <div class="row">
+        <span class="label">Orbit</span>
+        <span id="orbit-pill" class="pill idle"><span class="dot"></span><span>&mdash;</span></span>
+      </div>
+    </section>
+
+    <section class="card" id="card-detector">
+      <h2>Detector</h2>
+      <div class="row">
+        <span class="label">State</span>
+        <span id="detector-pill" class="pill idle"><span class="dot"></span><span>&mdash;</span></span>
+      </div>
+      <div class="bar-track"><div id="detector-bar" class="bar-fill"></div></div>
+      <div class="progress-label">
+        <span id="frame-label">frame &mdash; / &mdash;</span>
+      </div>
+    </section>
+
+    <section class="card" id="card-dlab">
+      <h2>D.LAB</h2>
+      <div class="row">
+        <span class="label">Job</span>
+        <span id="job-id" class="value" style="color: var(--muted);">&mdash;</span>
+      </div>
+      <div class="row">
+        <span class="label">Status</span>
+        <span id="dlab-pill" class="pill idle"><span class="dot"></span><span>&mdash;</span></span>
+      </div>
+      <div id="dlab-error" class="error-box"></div>
+    </section>
+  </main>
+
+  <footer>
+    Conceptual D.LAB mock &mdash; not a reproduction of the real DECTRIS D.LAB API.
+    Facility health shown here is read directly from the Tango-native ring; RxDECTRIS's
+    EpicsFacility mirrors the same simulated machine.
+  </footer>
+
+<script>
+(function () {
+  const els = {
+    conn: document.getElementById('conn'),
+    beamPill: document.getElementById('beam-pill'),
+    currentMetric: document.getElementById('current-metric'),
+    interlockPill: document.getElementById('interlock-pill'),
+    orbitPill: document.getElementById('orbit-pill'),
+    facilityCard: document.getElementById('card-facility'),
+    detectorPill: document.getElementById('detector-pill'),
+    detectorBar: document.getElementById('detector-bar'),
+    frameLabel: document.getElementById('frame-label'),
+    detectorCard: document.getElementById('card-detector'),
+    jobId: document.getElementById('job-id'),
+    dlabPill: document.getElementById('dlab-pill'),
+    dlabError: document.getElementById('dlab-error'),
+    dlabCard: document.getElementById('card-dlab'),
+  };
+
+  function setPill(el, cls, text) {
+    el.className = 'pill ' + cls;
+    el.querySelector('span:last-child').textContent = text;
+  }
+
+  function applyState(s) {
+    els.conn.className = s.stale ? 'stale' : 'live';
+    els.conn.textContent = s.stale ? 'connecting…' : 'live';
+
+    // Facility
+    const f = s.facility;
+    const beamOk = f.beam_available;
+    setPill(els.beamPill, beamOk ? 'ok' : 'bad', beamOk ? 'AVAILABLE' : 'LOST');
+    els.currentMetric.innerHTML = (f.current == null ? '—' : f.current.toFixed(1)) + '<span class="unit">mA</span>';
+    setPill(els.interlockPill, f.interlock_ok ? 'ok' : 'bad', f.interlock_ok ? 'CLEAR' : 'TRIPPED');
+    setPill(els.orbitPill, f.orbit_ok ? 'ok' : 'warn', f.orbit_ok ? 'OK' : 'DRIFT');
+    els.facilityCard.classList.toggle('alert', !beamOk || !f.interlock_ok);
+
+    // Detector
+    const d = s.detector;
+    const state = d.state || 'na';
+    let detCls = 'idle';
+    if (state === 'acquire') detCls = 'busy';
+    else if (state === 'ready' || state === 'idle') detCls = 'ok';
+    else if (state === 'error' || state === 'unreachable') detCls = 'bad';
+    setPill(els.detectorPill, detCls, state.toUpperCase());
+    const n = d.number_of_images || 0;
+    const i = (d.image_id != null ? d.image_id : -1) + 1;
+    const pct = n > 0 ? Math.min(100, (i / n) * 100) : 0;
+    els.detectorBar.style.width = pct + '%';
+    els.detectorBar.classList.toggle('bad', state === 'error');
+    els.frameLabel.textContent = n > 0 ? ('frame ' + i + ' / ' + n) : 'frame — / —';
+    els.detectorCard.classList.toggle('alert', state === 'error' || state === 'unreachable');
+
+    // D.LAB
+    const j = s.dlab;
+    els.jobId.textContent = j.job_id || '—';
+    const status = j.status || 'idle';
+    let jobCls = 'idle';
+    if (status === 'queued' || status === 'running') jobCls = 'busy';
+    else if (status === 'succeeded') jobCls = 'ok';
+    else if (status === 'failed' || status === 'unreachable') jobCls = 'bad';
+    setPill(els.dlabPill, jobCls, status.toUpperCase());
+    if (status === 'failed' && j.error) {
+      els.dlabError.textContent = j.error;
+      els.dlabError.classList.add('show');
+    } else {
+      els.dlabError.classList.remove('show');
+    }
+    els.dlabCard.classList.toggle('alert', status === 'failed');
+  }
+
+  async function tick() {
+    try {
+      const resp = await fetch('/state');
+      const s = await resp.json();
+      applyState(s);
+    } catch (e) {
+      els.conn.className = 'stale';
+      els.conn.textContent = 'disconnected';
+    }
+  }
+
+  tick();
+  setInterval(tick, 500);
+})();
+</script>
+</body>
+</html>
