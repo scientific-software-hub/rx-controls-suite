@@ -52,6 +52,23 @@ SCAN_RUNNING = 1
 SCAN_DONE    = 2
 SCAN_ABORTED = 3
 
+# ── Storage-ring fault scenarios (StorageRingController.ScenarioId) ──────────
+# Single source of truth for the scenario map — imported by inject_fault.py
+# and by demo/workflow-engines/scan_service.py's /sim/fault endpoint.
+SCENARIOS = {
+    "nominal":      0,
+    "orbit_drift":  1,
+    "vacuum_burst": 2,
+    "beam_loss":    3,
+}
+SCENARIO_NAMES = {v: k for k, v in SCENARIOS.items()}
+SCENARIO_DESCRIPTIONS = {
+    0: "nominal      — stable beam, no interlocks",
+    1: "orbit_drift  — orbits drift; quality alarms rise",
+    2: "vacuum_burst — vacuum event; interlocks fire → scan aborts",
+    3: "beam_loss    — current decays; shutter closes; scan pauses",
+}
+
 # ── Thresholds (derived from SimulationEngine.cpp alarm levels) ───────────────
 # Nominal beam current is ~100 mA (varies with scenario).
 # beam_loss scenario decays to a floor of 25 mA.

@@ -1,0 +1,306 @@
+{
+  "name": "Guarded Tomography Scan",
+  "id": "rxcs0001tomoscan",
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "pinData": {},
+  "tags": [],
+  "meta": { "templateId": "rx-controls-suite" },
+  "nodes": [
+    {
+      "parameters": {
+        "formTitle": "Guarded tomography scan",
+        "formDescription": "Runs the same rx-controls-suite guarded scan as prefect_flow.py, driven by this node graph over scan_service.py (:8030). Inject faults from the 'Inject Fault' workflow while it runs.",
+        "formFields": {
+          "values": [
+            { "fieldLabel": "projections", "fieldType": "number", "requiredField": true },
+            { "fieldLabel": "sweeps", "fieldType": "number", "requiredField": true },
+            { "fieldLabel": "exposure_ms", "fieldType": "number", "requiredField": true },
+            { "fieldLabel": "watchdog_s", "fieldType": "number", "requiredField": true },
+            { "fieldLabel": "target_quality_pct", "fieldType": "number", "requiredField": true },
+            { "fieldLabel": "max_iterations", "fieldType": "number", "requiredField": true }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000001",
+      "name": "Experiment Form",
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.2,
+      "position": [-360, 200],
+      "webhookId": "a1000000-0000-4000-8000-0000000000f1"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:8030/scan",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"projections\": $json.projections, \"sweeps\": $json.sweeps, \"exposure_ms\": $json.exposure_ms, \"watchdog_s\": $json.watchdog_s, \"target_quality_pct\": $json.target_quality_pct, \"max_iterations\": $json.max_iterations } }}",
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000002",
+      "name": "Create Scan",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-140, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://127.0.0.1:8030/scan/{{ $('Create Scan').item.json.scan_id }}/next",
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000003",
+      "name": "Next",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [120, 200]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "typeValidation": "loose", "version": 2 },
+                "conditions": [
+                  { "leftValue": "={{ $json.action }}", "rightValue": "sweep", "operator": { "type": "string", "operation": "equals" } }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "sweep"
+            },
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "typeValidation": "loose", "version": 2 },
+                "conditions": [
+                  { "leftValue": "={{ $json.action }}", "rightValue": "refine", "operator": { "type": "string", "operation": "equals" } }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "refine"
+            },
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "typeValidation": "loose", "version": 2 },
+                "conditions": [
+                  { "leftValue": "={{ $json.action }}", "rightValue": "assess", "operator": { "type": "string", "operation": "equals" } }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "assess"
+            },
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "typeValidation": "loose", "version": 2 },
+                "conditions": [
+                  { "leftValue": "={{ $json.action }}", "rightValue": "done", "operator": { "type": "string", "operation": "equals" } }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "done"
+            },
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "typeValidation": "loose", "version": 2 },
+                "conditions": [
+                  { "leftValue": "={{ $json.action }}", "rightValue": "abort", "operator": { "type": "string", "operation": "equals" } }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "abort"
+            }
+          ]
+        },
+        "options": { "fallbackOutput": "none" }
+      },
+      "id": "a1000000-0000-4000-8000-000000000004",
+      "name": "Route",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [360, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://127.0.0.1:8030/scan/{{ $('Create Scan').item.json.scan_id }}/sweep",
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000005",
+      "name": "Sweep",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [600, -60]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://127.0.0.1:8030/scan/{{ $('Create Scan').item.json.scan_id }}/refine",
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000006",
+      "name": "Refine",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [600, 120]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://127.0.0.1:8030/scan/{{ $('Create Scan').item.json.scan_id }}/assess",
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000007",
+      "name": "Assess",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [600, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://127.0.0.1:8030/scan/{{ $('Create Scan').item.json.scan_id }}/finalize",
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000008",
+      "name": "Finalize OK",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [600, 460]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://127.0.0.1:8030/scan/{{ $('Create Scan').item.json.scan_id }}/finalize",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"status\": \"aborted\" } }}",
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000009",
+      "name": "Finalize Aborted",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1060, 460]
+    },
+    {
+      "parameters": {},
+      "id": "a1000000-0000-4000-8000-00000000000a",
+      "name": "End OK",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [820, 460]
+    },
+    {
+      "parameters": {
+        "errorType": "errorMessage",
+        "errorMessage": "=Interlock abort — {{ $json.reason }}"
+      },
+      "id": "a1000000-0000-4000-8000-00000000000b",
+      "name": "Interlock Stop",
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [1280, 460]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "typeValidation": "loose", "version": 2 },
+          "conditions": [
+            { "leftValue": "={{ $json.aborted }}", "rightValue": "", "operator": { "type": "boolean", "operation": "true", "singleValue": true } }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-00000000000c",
+      "name": "Check Aborted",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [820, 40]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "typeValidation": "loose", "version": 2 },
+          "conditions": [
+            { "leftValue": "={{ $json.watchdog_hit }}", "rightValue": "", "operator": { "type": "boolean", "operation": "true", "singleValue": true } }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-00000000000d",
+      "name": "Check Watchdog",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1060, 40]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://127.0.0.1:8030/scan/{{ $('Create Scan').item.json.scan_id }}/wait-healthy",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"resume_url\": $execution.resumeUrl } }}",
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-00000000000e",
+      "name": "Arm Resume",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1280, -60]
+    },
+    {
+      "parameters": {
+        "resume": "webhook",
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-00000000000f",
+      "name": "Wait Beam",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [1500, -60],
+      "webhookId": "a1000000-0000-4000-8000-0000000000f2"
+    }
+  ],
+  "connections": {
+    "Experiment Form": { "main": [[{ "node": "Create Scan", "type": "main", "index": 0 }]] },
+    "Create Scan": { "main": [[{ "node": "Next", "type": "main", "index": 0 }]] },
+    "Next": { "main": [[{ "node": "Route", "type": "main", "index": 0 }]] },
+    "Route": {
+      "main": [
+        [{ "node": "Sweep", "type": "main", "index": 0 }],
+        [{ "node": "Refine", "type": "main", "index": 0 }],
+        [{ "node": "Assess", "type": "main", "index": 0 }],
+        [{ "node": "Finalize OK", "type": "main", "index": 0 }],
+        [{ "node": "Finalize Aborted", "type": "main", "index": 0 }]
+      ]
+    },
+    "Sweep": { "main": [[{ "node": "Check Aborted", "type": "main", "index": 0 }]] },
+    "Refine": { "main": [[{ "node": "Check Aborted", "type": "main", "index": 0 }]] },
+    "Assess": { "main": [[{ "node": "Next", "type": "main", "index": 0 }]] },
+    "Check Aborted": {
+      "main": [
+        [{ "node": "Finalize Aborted", "type": "main", "index": 0 }],
+        [{ "node": "Check Watchdog", "type": "main", "index": 0 }]
+      ]
+    },
+    "Check Watchdog": {
+      "main": [
+        [{ "node": "Arm Resume", "type": "main", "index": 0 }],
+        [{ "node": "Next", "type": "main", "index": 0 }]
+      ]
+    },
+    "Arm Resume": { "main": [[{ "node": "Wait Beam", "type": "main", "index": 0 }]] },
+    "Wait Beam": { "main": [[{ "node": "Next", "type": "main", "index": 0 }]] },
+    "Finalize OK": { "main": [[{ "node": "End OK", "type": "main", "index": 0 }]] },
+    "Finalize Aborted": { "main": [[{ "node": "Interlock Stop", "type": "main", "index": 0 }]] }
+  }
+}

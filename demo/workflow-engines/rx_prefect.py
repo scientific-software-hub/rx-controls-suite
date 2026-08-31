@@ -50,7 +50,6 @@ loop free for device reads; here it's keeping Prefect calls off a thread
 they can't work from at all.
 """
 
-import queue
 from datetime import timedelta
 
 import reactivex as rx
@@ -62,40 +61,10 @@ from prefect.artifacts import (
 )
 from prefect.flow_runs import resume_flow_run
 
-from scan_core import ScanEvent, is_healthy
-
-
-# ── the rx-loop → task-thread boundary ──────────────────────────────────────
-
-def drain(events: rx.Observable, rx_loop, on_event, timeout: float | None = None) -> None:
-    """Run *events* to completion, calling ``on_event(ev)`` on the CALLING
-    thread — never on the rx loop thread. See module docstring.
-
-    The rx loop thread only ever ``queue.put``s; this function's own thread
-    (the Prefect task that calls it) pulls from the queue and invokes
-    *on_event*, so every Prefect SDK call *on_event* makes is safe. If
-    *on_event* raises, the exception propagates out of this call normally —
-    on the calling thread, where Prefect expects a task to fail.
-    """
-    q: "queue.Queue[tuple[str, object]]" = queue.Queue()
-
-    dispose = rx_loop.subscribe(
-        events,
-        on_next=lambda ev: q.put(("next", ev)),
-        on_error=lambda exc: q.put(("error", exc)),
-        on_completed=lambda: q.put(("completed", None)),
-    )
-    try:
-        while True:
-            kind, payload = q.get(timeout=timeout)
-            if kind == "next":
-                on_event(payload)
-            elif kind == "error":
-                raise payload
-            else:
-                return
-    finally:
-        dispose()
+# ``drain`` — the rx-loop → task-thread boundary — moved to scan_core.py once
+# a second bridge (rx_n8n.py) needed the same primitive. Re-exported here so
+# ``from rx_prefect import drain`` in prefect_flow.py keeps working unchanged.
+from scan_core import ScanEvent, drain, is_healthy  # noqa: F401
 
 
 # ── ScanEvent → log line ────────────────────────────────────────────────────

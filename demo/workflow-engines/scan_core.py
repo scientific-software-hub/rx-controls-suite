@@ -13,8 +13,10 @@ orchestrator needs and the original single-process script didn't:
     one opaque call.
   - ``ScanEvent`` / ``to_events``        — a flat, orchestrator-neutral event
     stream (frame / beam_ok / beam_low / interlock) that any bridge module
-    (``rx_prefect.py``, later an n8n-facing ``scan_service.py``) can turn
-    into its own vocabulary (logs, artifacts, node outputs, ...).
+    (``rx_prefect.py``, ``rx_n8n.py`` / ``scan_service.py``) turns into its
+    own vocabulary (logs, artifacts, SSE frames, node outputs, ...).
+  - ``drain``                            — the rx-loop → calling-thread
+    boundary; both bridges need it, so it lives here rather than in one.
   - ``sustained_low``                    — a *second* beam-loss tier on top
     of the existing per-projection gate: fires once beam has been low
     continuously for N seconds, for an orchestrator to escalate to (e.g.
@@ -32,6 +34,7 @@ Path bootstrap mirrors ``demo/reactive-query-cache/querycache_dashboard.py``:
 reuse the sibling demo's constants and pipeline rather than duplicating them.
 """
 
+import queue
 import sys
 import time
 from dataclasses import dataclass, field
@@ -151,18 +154,27 @@ def sweep_frames(
     index_offset: int,
     scheduler,
     stop_trigger: rx.Observable | None = None,
+    indices: list[int] | None = None,
 ) -> rx.Observable:
     """One sweep's frames: a concat of ``guarded_acquire_projection`` calls.
 
-    Frame indices run ``index_offset .. index_offset + len(angles) - 1`` so
-    HDF5 rows land at the right absolute slot regardless of which sweep
-    produced them. If *stop_trigger* fires mid-sweep, the concat is cut short
+    By default frame indices run ``index_offset .. index_offset + len(angles)
+    - 1`` so HDF5 rows land at the right absolute slot regardless of which
+    sweep produced them. Pass *indices* (same length as *angles*, e.g. from
+    ``refine.refine_points``) to re-acquire an arbitrary, non-contiguous set
+    of projections at their *original* row indices — a refinement pass
+    overwrites existing rows rather than appending; *index_offset* is then
+    unused.
+
+    If *stop_trigger* fires mid-sweep, the concat is cut short
     (``take_until``) — the caller sees fewer frames than ``len(angles)`` and
     decides what that means (escalate, abort, ...).
     """
+    if indices is None:
+        indices = [index_offset + i for i in range(len(angles))]
     projections = [
-        guarded_acquire_projection(angle, index_offset + i, ctx, health, scheduler)
-        for i, angle in enumerate(angles)
+        guarded_acquire_projection(angle, idx, ctx, health, scheduler)
+        for idx, angle in zip(indices, angles)
     ]
     frames = rx.concat(*projections)
     if stop_trigger is not None:
@@ -287,6 +299,48 @@ class _Counter:
         return self._n
 
 
+# ── rx-loop → calling-thread boundary ──────────────────────────────────────
+
+def drain(events: rx.Observable, rx_loop, on_event, timeout: float | None = None) -> None:
+    """Run *events* to completion, calling ``on_event(ev)`` on the CALLING
+    thread — never on the rx loop thread.
+
+    Every orchestrator bridge needs this same boundary. rxepics/rxtango
+    subscriptions run on ``RxLoop``'s dedicated asyncio-loop thread (they
+    schedule with ``asyncio.ensure_future`` and need a running loop where
+    they subscribe), but the side effects a caller wants to attach to each
+    event — a Prefect log line or artifact call, an HDF5 write, an SSE
+    ``yield`` — must happen on the caller's own thread, which has the run
+    context / file handle / response generator the rx loop thread does not.
+
+    So the rx loop thread only ever ``queue.put``s here; this function's own
+    thread pulls from the queue and invokes *on_event*. If *on_event*
+    raises, the exception propagates out of this call on the calling thread,
+    where an orchestrator expects a step to fail (that's how an interlock
+    becomes a failed task / errored execution). ``finally`` disposes the
+    subscription whether the stream completed, errored, or *on_event* threw.
+    """
+    q: "queue.Queue[tuple[str, object]]" = queue.Queue()
+
+    dispose = rx_loop.subscribe(
+        events,
+        on_next=lambda ev: q.put(("next", ev)),
+        on_error=lambda exc: q.put(("error", exc)),
+        on_completed=lambda: q.put(("completed", None)),
+    )
+    try:
+        while True:
+            kind, payload = q.get(timeout=timeout)
+            if kind == "next":
+                on_event(payload)
+            elif kind == "error":
+                raise payload
+            else:
+                return
+    finally:
+        dispose()
+
+
 # ── HDF5 run ─────────────────────────────────────────────────────────────────
 
 _DTYPE = np.dtype([
@@ -325,15 +379,25 @@ class ScanRun:
         self.file.attrs["motor_speed"] = motor_speed
         self.file.attrs["num_projections"] = num_proj
         self.file.attrs["orchestrator"] = orchestrator
-        self.frames_written = 0
-        self.quality_ok_count = 0
+        # Per-index, not a running tally: a refinement pass (see refine.py)
+        # re-acquires a projection and overwrites its row — it must overwrite
+        # that row's quality verdict too, not add a second count. The Prefect
+        # flow never re-acquires an index, so `frames_written` /
+        # `quality_ok_count` read back exactly as before for it.
+        self._quality_by_index: dict[int, bool] = {}
 
     def write_frame(self, frame: tuple) -> None:
         ts, i, angle, counts, bpx, bpy, ring_cur, orbit_x, quality = frame
         self.dataset[i] = (ts, i, angle, counts, bpx, bpy, ring_cur, orbit_x, quality)
-        self.frames_written += 1
-        if quality:
-            self.quality_ok_count += 1
+        self._quality_by_index[int(i)] = bool(quality)
+
+    @property
+    def frames_written(self) -> int:
+        return len(self._quality_by_index)
+
+    @property
+    def quality_ok_count(self) -> int:
+        return sum(1 for ok in self._quality_by_index.values() if ok)
 
     def close(self) -> None:
         self.file.close()

@@ -26,20 +26,7 @@ sys.path.insert(0, str(_ROOT / "RxTango" / "python" / "src"))
 from reactivex.scheduler.eventloop import AsyncIOScheduler
 
 from rxtango import write_attribute
-from facility import CONTROLLER
-
-_SCENARIOS = {
-    "nominal":      0,
-    "orbit_drift":  1,
-    "vacuum_burst": 2,
-    "beam_loss":    3,
-}
-_DESCRIPTIONS = {
-    0: "nominal      — stable beam, no interlocks",
-    1: "orbit_drift  — orbits drift; quality alarms rise",
-    2: "vacuum_burst — vacuum event; interlocks fire → scan aborts",
-    3: "beam_loss    — current decays; shutter closes; scan pauses",
-}
+from facility import CONTROLLER, SCENARIO_DESCRIPTIONS as _DESCRIPTIONS, SCENARIOS as _SCENARIOS
 
 
 async def main() -> None:

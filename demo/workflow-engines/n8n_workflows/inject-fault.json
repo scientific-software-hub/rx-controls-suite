@@ -1,0 +1,59 @@
+{
+  "name": "Inject Fault",
+  "id": "rxcs0002injectfault",
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "pinData": {},
+  "tags": [],
+  "meta": { "templateId": "rx-controls-suite" },
+  "nodes": [
+    {
+      "parameters": {
+        "formTitle": "Inject a storage-ring fault",
+        "formDescription": "Writes StorageRingController.ScenarioId via scan_service.py. Watch the running experiment react.",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "scenario",
+              "fieldType": "dropdown",
+              "fieldOptions": {
+                "values": [
+                  { "option": "nominal" },
+                  { "option": "orbit_drift" },
+                  { "option": "vacuum_burst" },
+                  { "option": "beam_loss" }
+                ]
+              },
+              "requiredField": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "30c573d0-e8eb-46a0-ba11-21540c749d35",
+      "name": "Fault Form",
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.2,
+      "position": [0, 0],
+      "webhookId": "b2c8d82d-96b0-4fec-b337-eb296747ecf4"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:8030/sim/fault",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"scenario\": $json.scenario } }}",
+        "options": {}
+      },
+      "id": "0a8c17b4-a59e-43df-89a8-3afe023c439b",
+      "name": "POST /sim/fault",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [240, 0]
+    }
+  ],
+  "connections": {
+    "Fault Form": { "main": [[{ "node": "POST /sim/fault", "type": "main", "index": 0 }]] }
+  }
+}

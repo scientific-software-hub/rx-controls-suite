@@ -173,24 +173,50 @@ reducible to this docker demo).
 
 ### demo/workflow-engines
 
-The guarded tomography scan orchestrated by **Prefect** instead of a hand-rolled
-script or Bluesky's `RunEngine` — the first data point outside the "scientific
-orchestrator" family, stress-testing the suite's "we feed orchestrators, we don't
-replace them" claim from a general-purpose-Python angle. An n8n variant (no
-in-process Python option at all — Pyodide is legacy, n8n 2 dropped it) is next;
-its design (n8n owns the sweep loop via HTTP+SSE against a `scan_core.py`-backed
-service) is recorded in `workflow-engines/README.md`'s closing section.
+The guarded tomography scan orchestrated by **Prefect** and by **n8n**, instead
+of a hand-rolled script or Bluesky's `RunEngine` — data points outside the
+"scientific orchestrator" family, stress-testing the suite's "we feed
+orchestrators, we don't replace them" claim. Prefect is the general-purpose-
+Python angle; n8n is the not-Python-at-all angle: the rx scan is exposed as an
+HTTP+SSE service (`scan_service.py`, `:8030`) and n8n's node graph is the
+orchestration. Two findings the n8n half exists to show: (1) with no in-process
+Python step, the scan's live state has to become a **server-side session** and
+the orchestrator holds only control flow — that's the cost/benefit of making an
+experiment a REST resource; (2) the n8n graph is a genuine **cycle**, not a
+longer DAG — a quality-driven refinement loop (`refine.py`) re-acquires the
+projections a full pass flagged LOW and re-assesses, which a DAG can't express.
+n8n 2.0 replaced Pyodide with native Python on external task runners (not "no
+Python at all" — but not a beamline-appropriate place for a live caproto
+Context either).
 
 **Files:**
 - `scan_core.py` — orchestrator-agnostic: reuses `guarded_acquire_projection`
   from `synchrotron-beamline/guarded_scan.py` unmodified; adds `sweep_angles`/
-  `sweep_frames` (cut one scan into N sweeps), `ScanEvent`/`to_events` (a flat
-  frame/beam_ok/beam_low/interlock stream), `sustained_low` (tier-2 beam-loss
-  watchdog), `ScanRun` (the HDF5 file). No Prefect import.
-- `rx_prefect.py` — the bridge, four adapters parallel to `bluesky/rx_bluesky.py`'s:
-  `drain` (rx loop thread → task thread boundary), `log_event`, `ProgressTracker`,
-  `sweep_table`, `pause_until_healthy` (→ `resume_flow_run`)
-- `prefect_flow.py` — `prepare_beamline → run_sweep ×N → finalize`
+  `sweep_frames` (cut one scan into N sweeps; `sweep_frames` takes an optional
+  explicit `indices` list for non-contiguous refinement passes), `ScanEvent`/
+  `to_events`, `sustained_low` (tier-2 beam-loss watchdog), `drain` (rx loop
+  thread → calling thread boundary, shared by both bridges), `ScanRun` (HDF5;
+  per-index quality dict so a re-acquisition overwrites, not double-counts). No
+  orchestrator import.
+- `refine.py` — the quality-driven loop, no orchestrator/rx import:
+  `QualityLedger` (last-known quality per projection index, idempotent),
+  `assess` (stop / converged / *exhausted* decision), `refine_points`
+  (LOW indices → `(index, angle)` pairs).
+- `rx_prefect.py` — Prefect bridge: `log_event`, `ProgressTracker`,
+  `sweep_table`, `pause_until_healthy` (→ `resume_flow_run`); re-exports `drain`.
+- `rx_n8n.py` — n8n bridge, three adapters: `event_json`, `EventHub` (fan-out to
+  SSE clients), `resume_on_healthy` (GET `$execution.resumeUrl` on beam
+  recovery — no `ThreadPoolScheduler` hop needed, unlike Prefect's).
+- `prefect_flow.py` — `prepare_beamline → run_sweep ×N → finalize`.
+- `scan_service.py` — FastAPI: `ScanSession` + `/scan` `/next` `/sweep`
+  `/refine` `/wait-healthy` `/assess` `/finalize` `/sim/fault` + SSE `/events`
+  + the dashboard. `/sweep` and `/refine` are sync `def` so they can block in
+  `drain`. `uvicorn.run(..., loop="asyncio")` for the caproto+uvloop gotcha.
+- `scan_dashboard.html` — instrument-panel dashboard at `:8030`; coverage strip
+  (unacquired / OK / LOW / re-acquired) is the centerpiece.
+- `n8n_workflows/` — `guarded-tomography-scan.json` (Form Trigger → the `/next`
+  cursor loop) + `inject-fault.json` (dropdown → `/sim/fault`); imported +
+  published by the n8n container's entrypoint.
 
 **Key design:** two-tier beam loss — the existing per-projection `wait_healthy`
 gate absorbs ordinary dropouts invisibly; `sustained_low` escalates a *sustained*
@@ -236,9 +262,22 @@ itself ends **Failed** with the reason, not just a buried return value.
   `sys.path` to import `scan_core`; a sibling directory literally named
   `prefect/` would shadow the real `prefect` package as an implicit namespace
   package. Layout stays flat for exactly this reason.
+- **n8n's Wait node resumes on GET, not POST.** `resume: webhook` registers its
+  restart hook as `$parameter["httpMethod"] || "GET"` — `resume_on_healthy`
+  must GET `$execution.resumeUrl`. A POST 404s with "does not contain a waiting
+  webhook with a matching path/method" and the run stays parked forever.
+- **n8n Form Trigger submissions are `multipart/form-data`** keyed `field-0`,
+  `field-1`, … (the HTML input names), not the field labels. The label is only
+  the *output* key (`$json.<label>` for typeVersion < 2.4). Matters only if you
+  script the form with curl — the browser does the right thing.
+- **n8n's internal task-broker port (5679) is fixed per instance**; with host
+  networking two local n8n instances collide and the second exits(1) right
+  after "n8n ready". `docker-compose.yml` moves ours to 5691.
 
-**Run:** `docker compose up -d` (Prefect server, `:4200`) alongside the
-synchrotron-beamline stack, then `python prefect_flow.py`.
+**Run:** `docker compose up -d` (Prefect `:4200` + n8n `:9000`) alongside the
+synchrotron-beamline stack. Prefect: `python prefect_flow.py`. n8n:
+`python scan_service.py` then drive it from `http://127.0.0.1:9000` (both
+workflows arrive imported + published).
 
 **Companion talk:** `docs/prefect-talk/` — a manager/beamline-scientist-facing slide
 deck (screenshots of both scenarios in the Prefect UI, no code), separate from

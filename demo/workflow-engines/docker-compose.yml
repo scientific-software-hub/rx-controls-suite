@@ -1,12 +1,18 @@
-# Prefect server — UI + API for the tomography-scan flow.
+# Workflow-engine UIs for the guarded tomography scan.
 #
-# Run this alongside the synchrotron-beamline stack (see
-# ../synchrotron-beamline/docker-compose.yml — start that one too):
+# Two orchestrators, side by side — run whichever you're demoing (or both):
 #
+#   prefect-server  :4200   drives prefect_flow.py   (in-process Python tasks)
+#   n8n             :9000   drives scan_service.py   (HTTP+SSE, visual node graph)
+#
+# Both sit alongside the synchrotron-beamline stack — start that first:
+#   cd ../synchrotron-beamline && docker compose up -d --build
+#   export EPICS_CA_AUTO_ADDR_LIST=NO EPICS_CA_ADDR_LIST=127.0.0.1
+#
+# Then:
 #   docker compose up -d
-#   export PREFECT_API_URL=http://127.0.0.1:4200/api
-#   python prefect_flow.py
-#   # open http://127.0.0.1:4200
+#   # Prefect:  export PREFECT_API_URL=http://127.0.0.1:4200/api ; python prefect_flow.py
+#   # n8n:      python scan_service.py ; open http://127.0.0.1:9000
 
 services:
   prefect-server:
@@ -19,5 +25,46 @@ services:
     volumes:
       - prefect-data:/root/.prefect
 
+  n8n:
+    # Pinned to the 2.x line. n8n ships a new minor most weeks — bump this to
+    # whatever `docker pull n8nio/n8n:2` gives you; the demo uses only core
+    # nodes (Form Trigger, HTTP Request, Switch, IF, Wait, Stop And Error).
+    image: n8nio/n8n:2.34.1
+    # Host networking so the node graph can reach scan_service.py, which runs
+    # on the host (it needs a live caproto Context + PyTango) at 127.0.0.1:8030
+    # — the same address every other script in this repo uses.
+    network_mode: host
+    environment:
+      N8N_PORT: "9000"                       # 5678 is often already taken
+      N8N_HOST: "127.0.0.1"
+      N8N_PROTOCOL: "http"
+      N8N_WEBHOOK_URL: "http://127.0.0.1:9000/"  # so $execution.resumeUrl is reachable
+      WEBHOOK_URL: "http://127.0.0.1:9000/"      # older alias, harmless
+      N8N_SECURE_COOKIE: "false"             # plain-http access over 127.0.0.1
+      N8N_DIAGNOSTICS_ENABLED: "false"
+      N8N_HIRING_BANNER_ENABLED: "false"
+      GENERIC_TIMEZONE: "Europe/Berlin"
+      DB_SQLITE_POOL_SIZE: "1"              # one process writes the SQLite file
+      # Host networking means n8n's internal task-broker port (default 5679)
+      # collides with any other local n8n. Move it out of the way.
+      N8N_RUNNERS_BROKER_PORT: "5691"
+      N8N_RUNNERS_BROKER_LISTEN_ADDRESS: "127.0.0.1"
+    volumes:
+      - n8n-data:/home/node/.n8n
+      - ./n8n_workflows:/workflows:ro
+    # Import the two workflows on every start (ids are stable, so re-imports
+    # just overwrite), best-effort publish them so the Form Triggers get
+    # production URLs, then hand off to the normal server. If publish churns
+    # in a newer n8n, just toggle each workflow Active once in the UI.
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >
+        n8n import:workflow --separate --input=/workflows || true;
+        n8n list:workflow --onlyId 2>/dev/null | while read wid; do
+          [ -n "$$wid" ] && n8n publish:workflow --id="$$wid" || true;
+        done;
+        exec n8n start
+
 volumes:
   prefect-data:
+  n8n-data:
