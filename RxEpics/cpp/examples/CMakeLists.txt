@@ -13,6 +13,7 @@ set(EXAMPLES
     pv_running_stats
     pv_backpressure
     pv_stats
+    resilient_monitor
 )
 
 foreach(EX IN LISTS EXAMPLES)

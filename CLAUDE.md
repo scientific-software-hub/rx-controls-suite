@@ -94,16 +94,19 @@ Wraps [cppTango](https://github.com/tango-controls/cppTango) (`Tango::DeviceProx
 
 Wraps [PVXS](https://github.com/mdavidsaver/pvxs) (`pvxs::client::Context`) with `rxcpp::observable<T>` streams.
 
-**Build:** CMake 3.18+ with `FetchContent` for RxCpp; PVXS found via `find_package(PVXS)` with pkg-config fallback. Header-only library. Requires `EPICS_PVA_ADDR_LIST` env var.
+**Build:** CMake 3.18+ with `FetchContent` for RxCpp (header-only; RxCpp's own CMake project is skipped via `SOURCE_SUBDIR`); PVXS found via `find_package(PVXS)` → pkg-config → `-DPVXS_ROOT`/`-DEPICS_BASE` fallback (PVXS ships no CMake config or `.pc`). Header-only library. Requires `EPICS_PVA_ADDR_LIST` env var.
 
 **Function hierarchy (`include/rxepics/`, namespace `rxepics`):**
 - `read_pv<T>(name, ctx)` → `observable<T>` — single-shot; `ctx.get(name).exec()->wait(5.0)` on detached thread; extracts `val["value"].as<T>()`
 - `write_pv<T>(name, value, ctx)` → `observable<T>` — re-emits written value
-- `monitor_pv<T>(name, ctx)` → `observable<T>` — push; `pvxs::client::Monitor` kept alive via `shared_ptr`; dispose destroys handle → subscription cancelled
+- `monitor_pv<T>(name, ctx)` → `observable<T>` — push; `detail::monitor_updates` owns a `shared_ptr<pvxs::client::Subscription>` and **drains** the event queue per callback; a per-update failure → `std::cerr`, not `on_error`; only `exec()` failure is terminal
+- `monitor_errors<T>(name, ctx)` → `observable<PvUpdateError>` — the per-update failures `monitor_pv` drops, as in-band values; own PVA subscription (PVXS doesn't dedupe like caproto)
+- `connection_status(name, ctx)` → `observable<bool>` — PVA link state via `ctx.connect(...)`; synthetic `false` on subscribe, then `distinct_until_changed`
+- `PvUpdateError` — bad update as a value (`pv_name`, `cause`, `timestamp`); never thrown
 - `EpicsContext` — Meyers singleton wrapping `pvxs::client::Context::fromEnv()`; `default_context()` free function
 - `EpicsClient` — fluent builder (no `execute` — EPICS has no commands)
 
-**Key design:** No commands — write to a command PV instead. PVXS Monitor lifetime managed via `shared_ptr` in cleanup lambda. First EPICS subproject in the suite with a reactive conformance test.
+**Key design:** No commands — write to a command PV instead. Resilience split mirrors `RxEpics/python` — errors and connection transitions are messages, only a setup failure is `on_error`; `verify_contract` rule **C7** enforces it. Subscription/Connect lifetimes managed via `shared_ptr` in the unsubscribe lambda. First EPICS subproject in the suite with a reactive conformance test (C1–C7).
 
 ### RxDectris/python
 

@@ -82,6 +82,36 @@ auto sub = rxepics::monitor_pv<double>("TEST:CALC")
 sub.unsubscribe();
 ```
 
+A per-update failure (an unconvertible payload, an update PVXS rejects) is written
+as one line to `std::cerr` and skipped — it does **not** terminate the stream.
+Only a *setup* failure (the subscription cannot be created) reaches `on_error`.
+
+### `monitor_errors<T>(name, ctx)` → `observable<PvUpdateError>`
+
+The per-update failures `monitor_pv<T>()` drops, as in-band messages instead of
+log lines.  Validates the same `T` conversion, never completes, never routes a
+per-update failure through `on_error`.
+
+```cpp
+rxepics::monitor_errors<double>("TEST:CALC")
+    .subscribe([](const rxepics::PvUpdateError& e) { std::cerr << e.what() << "\n"; });
+```
+
+> Unlike Python (caproto dedupes subscriptions by parameters), `monitor_pv<T>()`
+> and `monitor_errors<T>()` on the same PV open **two** PVA subscriptions.  Share
+> one by publishing a single stream (`.publish().ref_count()`).
+
+### `connection_status(name, ctx)` → `observable<bool>`
+
+PVA channel link state as a stream — `true` while connected.  Emits a synthetic
+`false` on subscribe, then one value per transition (de-duplicated).  Never
+completes; a transition is a message, never an error.
+
+```cpp
+rxepics::connection_status("TEST:CALC")
+    .subscribe([](bool up) { set_link_led(up); });
+```
+
 ### `EpicsContext`
 
 Process-wide PVXS context singleton.  Created from `EPICS_PVA_*` env vars.
@@ -108,6 +138,30 @@ rxepics::EpicsClient()
 
 Builder methods: `read`, `monitor` (first step only), `write` (use prev / static / callable),
 `map`, `subscribe`.  No `execute` — EPICS has no commands.
+
+## Resilience — errors as messages, not exceptions that stop the process
+
+This is the design principle behind the suite (Khokhriakov et al., *J. Synchrotron
+Rad.* 29, 644–653, 2022), and RxCpp's `on_error` is a *terminal* notification — so
+routing a transient failure through it would be the failure that ends the monitor.
+RxEpics/cpp splits failures by what they mean, matching `RxEpics/python`:
+
+- A **setup** failure (the PVA subscription cannot be created) is terminal and
+  reaches `on_error`.
+- A **per-update** failure (an unconvertible payload, an update PVXS rejects) is a
+  *message*.  `monitor_pv<T>()` writes it to `std::cerr` and keeps running;
+  `monitor_errors<T>(name, ctx)` carries it as a `PvUpdateError` value for callers
+  who want it in-band.
+- A **connection transition** is a message on `connection_status(name, ctx)` —
+  never an error.
+
+**Reconnect is PVXS's job.** With Connected/Disconnected masked on the value
+stream, a dropped monitor simply stops yielding until PVXS re-establishes it; no
+client-side reconnect operator is needed (as for caproto in `RxEpics/python`).
+
+`examples/resilient_monitor.cpp` merges all three streams into one console view;
+`tests/verify_contract.cpp` rule **C7** proves a transient update error does not
+terminate a long-lived monitor.
 
 ## Key patterns
 
@@ -146,9 +200,13 @@ All rules PASS → exits 0.  See [`tests/README.md`](tests/README.md).
 | Single-shot read | `read_pv()` | `read_pv<T>()` |
 | Single-shot write | `write_pv()` | `write_pv<T>()` |
 | Push | `monitor_pv()` | `monitor_pv<T>()` |
+| Per-update failures as messages | `monitor_errors()` | `monitor_errors<T>()` |
+| Link state as a stream | `connection_status()` | `connection_status()` |
+| Bad update value type | `PvUpdateError` | `PvUpdateError` |
 | Fluent builder | `EpicsClient` | `EpicsClient` |
 | Context | `EpicsContext` (caproto) | `EpicsContext` (PVXS) |
-| Conformance test | *(none)* | `verify_contract` |
+| Conformance test | *(none)* | `verify_contract` (C1–C7) |
+| Single-shot retry | `retry_with_backoff()` | *(not ported)* |
 
 ## Architecture
 
@@ -174,15 +232,18 @@ RxEpics/cpp/
 │   ├── context.hpp       EpicsContext singleton (PVXS)
 │   ├── channel.hpp       read_pv<T>
 │   ├── channel_write.hpp write_pv<T>
-│   ├── monitor.hpp       monitor_pv<T>
+│   ├── monitor.hpp       monitor_pv<T>, monitor_errors<T>
+│   ├── connection.hpp    connection_status
+│   ├── errors.hpp        PvUpdateError
 │   ├── client.hpp        EpicsClient fluent builder
 │   └── rxepics.hpp       umbrella include
 ├── tests/
 │   ├── CMakeLists.txt
-│   ├── verify_contract.cpp
+│   ├── verify_contract.cpp   (C1–C7)
 │   └── README.md
 └── examples/
     ├── CMakeLists.txt
     ├── README.md
-    └── *.cpp  (14 examples)
+    ├── resilient_monitor.cpp  values + errors + link state, merged
+    └── *.cpp  (15 examples)
 ```

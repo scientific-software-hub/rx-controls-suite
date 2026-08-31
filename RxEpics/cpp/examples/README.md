@@ -54,6 +54,16 @@ cmake --build build
 | 13 | `calibration_pipeline` | Continuous read → calibrate → write | `./build/examples/calibration_pipeline [src] [dst]` |
 | 14 | `pv_pipeline` ★ | Fluent EpicsClient chain | `./build/examples/pv_pipeline [src] [dst]` |
 
+### Resilience
+
+| # | Example | What it demonstrates | Run |
+|---|---------|---------------------|-----|
+| 15 | `resilient_monitor` ★ | `monitor_pv` + `monitor_errors` + `connection_status` merged — a bad update or dropped link is a line of output, not a crash | `./build/examples/resilient_monitor [pv]` |
+
+To see it survive an outage: run it, then in another shell
+`cd RxEpics/python && docker compose stop epics-ioc` … `docker compose start epics-ioc`.
+The link goes DOWN then UP and values resume — no client action.
+
 ★ = recommended demos for presentations
 
 ## Quick demo

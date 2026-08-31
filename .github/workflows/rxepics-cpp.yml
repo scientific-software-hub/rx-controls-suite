@@ -1,0 +1,103 @@
+name: RxEpics/cpp
+
+on:
+  push:
+    paths:
+      - 'RxEpics/cpp/**'
+  pull_request:
+    paths:
+      - 'RxEpics/cpp/**'
+
+defaults:
+  run:
+    working-directory: RxEpics/cpp
+
+jobs:
+  validate:
+    name: Validate CMake structure
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify required files exist
+        run: |
+          missing=0
+          for f in \
+            CMakeLists.txt \
+            README.md \
+            CLAUDE.md \
+            include/rxepics/context.hpp \
+            include/rxepics/channel.hpp \
+            include/rxepics/channel_write.hpp \
+            include/rxepics/monitor.hpp \
+            include/rxepics/connection.hpp \
+            include/rxepics/errors.hpp \
+            include/rxepics/client.hpp \
+            include/rxepics/rxepics.hpp \
+            tests/CMakeLists.txt \
+            tests/verify_contract.cpp \
+            tests/README.md \
+            examples/CMakeLists.txt \
+            examples/README.md \
+            examples/read_pv.cpp \
+            examples/poll_pv.cpp \
+            examples/monitor_pv.cpp \
+            examples/zip_pvs.cpp \
+            examples/alarm_monitor.cpp \
+            examples/pv_sliding_average.cpp \
+            examples/pv_pipeline.cpp \
+            examples/resilient_monitor.cpp
+          do
+            if [ ! -f "$f" ]; then
+              echo "ERROR: missing $f"
+              missing=1
+            fi
+          done
+          if [ "$missing" -eq 1 ]; then exit 1; fi
+          echo "All required files are present."
+
+      - name: Verify CMakeLists.txt references RxCpp FetchContent
+        run: grep -q 'FetchContent' CMakeLists.txt
+
+      - name: Verify examples CMakeLists.txt lists all example sources
+        run: |
+          while IFS= read -r cpp; do
+            base=$(basename "$cpp" .cpp)
+            if ! grep -q "$base" examples/CMakeLists.txt; then
+              echo "ERROR: examples/CMakeLists.txt does not reference $base"
+              exit 1
+            fi
+          done < <(find examples -maxdepth 1 -name '*.cpp')
+          echo "All .cpp examples are referenced in CMakeLists.txt."
+
+  build:
+    name: Compile against PVXS
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/checkout@v4
+
+      # The epics-containers image already carries EPICS Base (/epics/epics-base)
+      # and PVXS 1.5 (/epics/support/pvxs) — the same image docker-compose.yml
+      # uses for the softIoc.  It ships git/g++/make but not cmake.
+      #
+      # Targets: `verify_contract` transitively includes every rxepics/*.hpp
+      # header (via rxepics.hpp) and exercises the C1–C7 contract; `resilient_monitor`
+      # covers the monitor_pv / monitor_errors / connection_status merge pipeline.
+      # Five older examples (multi_pv_snapshot, pv_stats, pv_correlate, zip_pvs,
+      # resilient's peers) do not yet compile against real RxCpp/GCC 13 — tracked
+      # separately, see RxEpics/cpp/CLAUDE.md § PVXS / RxCpp gotchas.
+      - name: Compile headers, contract verifier and the resilience example
+        run: |
+          docker run --rm -v "$PWD:/src" -w /src \
+            ghcr.io/epics-containers/epics-base-developer:7.0.10ec1 \
+            sh -euc '
+              apt-get update -qq && apt-get install -y -qq cmake >/dev/null
+              cmake -S RxEpics/cpp -B /tmp/rxepics-build \
+                -DPVXS_ROOT=/epics/support/pvxs -DEPICS_BASE=/epics/epics-base
+              cmake --build /tmp/rxepics-build -j"$(nproc)" \
+                --target verify_contract resilient_monitor
+            '
