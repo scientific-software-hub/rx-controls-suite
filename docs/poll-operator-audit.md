@@ -31,7 +31,7 @@ is available here to validate a hand-rolled exhaust helper.
 | `RxEpics/python/examples/pv_running_stats.py:92` | interval | `read_pv` | `concat_map` | running stats — no sample may drop |
 | `RxEpics/python/examples/pv_sliding_average.py:59` | interval | `read_pv` | `concat_map` | sliding window — no sample may drop |
 | `RxEpics/python/examples/pv_stats.py:74` | interval+take(n) | `read_pv` | `concat_map` | fixed-N stats sample |
-| `RxEpics/python/examples/pv_throttle.py:65` | interval | `read_pv` | `map`+`exclusive` | throttle is itself a coalesce demo |
+| `RxEpics/python/examples/pv_throttle.py:65` | interval | `read_pv` | `concat_map` | docstring commits to "IOC sees every request" — the demo's coalescing is `sample()` downstream, not the read step |
 | `RxEpics/python/examples/pv_correlate.py:51` | interval | `zip(read,read)` | `concat_map` | feeds a printed diff; see Task D for correlate_snapshot |
 | `RxEpics/python/examples/zip_pvs.py:57` | interval | `zip(read,read)` | `concat_map` | see Task D |
 | `RxEpics/python/examples/multi_pv_snapshot.py:95` | interval | `snapshot()` (inner fan-out) | `map`+`exclusive` (outer only) | outer poll coalesces; inner fan-out stays `flat_map` |
@@ -41,21 +41,20 @@ is available here to validate a hand-rolled exhaust helper.
 | `RxTango/python/examples/running_stats.py:51` | interval | `read_attribute` | `concat_map` | running stats window |
 | `RxTango/python/examples/sliding_average.py:46` | interval | `read_attribute` | `concat_map` | sliding window |
 | `RxTango/python/examples/stats.py:42` | interval | `read_attribute` | `concat_map` | fixed-N stats sample |
-| `RxTango/python/examples/throttle.py:46` | interval | `read_attribute` | `map`+`exclusive` | throttle demo itself coalesces |
+| `RxTango/python/examples/throttle.py:46` | interval | `read_attribute` | `concat_map` | same reasoning as the EPICS throttle demo — coalescing is `sample()` downstream |
 | `RxTango/python/examples/zip_window.py:43` | interval | `read_attribute` | `concat_map` | window buffer — no sample may drop |
 | `RxTango/python/examples/correlate.py:41` | interval | `zip(2 reads)`+catch | `concat_map` | see Task D |
 | `RxTango/python/examples/zip_attributes.py:36` | single-shot (not a poll) | `zip(2 reads)` | *(unchanged)* | DO NOT TOUCH — one-shot snapshot |
 | `RxTango/python/examples/retry.py:62` | interval | `read_attribute().pipe(retry(3))` | `concat_map` | retries must not overlap |
-| `RxDectris/python/src/rxdectris/status.py:49` | interval | `read_status("state")` | `map`+`exclusive` | **library code** — state poll, freshest matters; docstring at L43 updated |
-| `demo/synchrotron-beamline/facility.py:113` (`ring_health`) | interval | `zip` of 3 reads (shared, `share()`d) | `map`+`exclusive` | dashboard-class heterogeneous snapshot; feeds the shutter supervisor too — see JUDGMENT note below |
+| `RxDectris/python/src/rxdectris/status.py:49` | interval | `read_status("state")` | `concat_map` | **library code** — feeds `distinct_until_changed`; a state transition must not be dropped. Docstring at L43 updated with the residual sub-tick blind spot |
+| `demo/synchrotron-beamline/facility.py:113` (`ring_health`) | interval | `zip` of 3 reads (shared, `share()`d) | `concat_map` | **corrected from an initial `map`+`exclusive` filing**: this shared stream also feeds `guarded_scan.py`'s interlock abort trigger, which watches `interlocks` for an edge — coalescing could drop the one tick that caught it |
 | `demo/synchrotron-beamline/facility.py:137` (`poll_until`) | interval | `read_pv` | `map`+`exclusive` | wait-for-condition poll |
 | `demo/synchrotron-beamline/live_dashboard.py:253` | interval | `zip` of 46 reads | `map`+`exclusive` | pure display, heaviest tick — coalescing here matters most |
-| `demo/synchrotron-beamline/bluesky/live_strip.py:139` | interval | `zip` of 7 reads | `map`+`exclusive` | display strip |
-| `demo/synchrotron-beamline/guarded_scan.py:141,145,147,151` (`poll_until`) | interval | `read_pv`/`read_attribute` | `map`+`exclusive` | wait-for-condition polls |
-| `demo/synchrotron-beamline/guarded_scan.py:162,182` | interval | `zip` of reads, feeds HDF5 dataset | `concat_map` | dataset write — no sample may drop |
+| `demo/synchrotron-beamline/bluesky/live_strip.py:139` | interval | `zip` of 7 reads | `concat_map` | **corrected from an initial `map`+`exclusive` filing**: `ingest()` tracks discrete events (each `cur_proj` advance, the ABORTED transition) into `events_total`/`aborted_at` — a coalescing poll could drop the tick that caught one |
+| ~~`demo/synchrotron-beamline/guarded_scan.py:141,145,147,151,162,182,228-230`~~ | *(correction: these are steps inside `guarded_acquire_projection`'s one-shot per-projection pipeline — source is `write_pv(...)`, a single-item observable invoked once per projection, not a repeating `rx.interval`)* | | *(unchanged)* | **DO NOT TOUCH** — sequential single-shot chain; the only real poll here is inside `poll_until`'s own definition (`facility.py`, already fixed) |
 | `demo/reactive-query-cache/query_cache.py:40` | *(docstring example only)* | `read_attribute` | `map`+`exclusive` | cache upstream is a display-class poll; docstring updated to match |
 | `demo/reactive-query-cache/querycache_dashboard.py:119,125` | interval | `read_attribute`/`read_pv` | `map`+`exclusive` | dashboard poll |
-| `demo/dectris-integration/facilities.py:141` | interval | `zip` of 3 `read_pv` | `map`+`exclusive` | EPICS facility mirror, display-class |
+| `demo/dectris-integration/facilities.py:141` | interval | `zip` of 3 `read_pv` | `concat_map` | **corrected from an initial `map`+`exclusive` filing**: `EpicsFacility.health()` plays the same interlock-gating role as `TangoFacility`'s `ring_health` — `wait_until_healthy`/`abort_on` watch `interlock_ok` for an edge |
 | `demo/workflow-engines/scan_service.py:358` | `rx.timer` | `zip` of 4 reads + catch | `map`+`exclusive` | dashboard `/events` feed |
 | `examples/tango_epics_normalize.py:67` | interval | `read_attribute` | `map`+`exclusive` | Demo A/B display poll |
 | `examples/tango_epics_normalize.py:133` | interval | `zip` (Tango+EPICS) | `concat_map` | see Task D |
@@ -68,7 +67,7 @@ is available here to validate a hand-rolled exhaust helper.
 | `demo/workflow-engines/scan_core.py:104-119` | `health` (hot poll) + `distinct_until_changed` | `write_pv` (shutter) | `concat_map` | same hazard |
 | `demo/dectris-integration/facility_bridge.py:47-56` | `ring_health` (2 Hz hot poll) | `zip` of 4 `write_pv` (facility mirror) | `concat_map` | **corrected from the brief's "DO NOT TOUCH/correct merge" filing** — this is the identical unordered-write hazard, not a parallel fan-out; a `write_pv` here is a mutation, not an independent read |
 | `RxEpics/python/examples/calibration_pipeline.py:59` | downstream of interval chain | `write_pv` | `concat_map` | write must not race the next tick's write |
-| `RxTango/python/examples/calibration_pipeline.py:43,51` | downstream of read chain | `write_attribute` | `concat_map` | same |
+| ~~`RxTango/python/examples/calibration_pipeline.py:43,51`~~ | *(correction: this file has no `rx.interval` — it runs the pipeline once per invocation, not per tick)* | | *(unchanged)* | **DO NOT TOUCH** — sequential single-shot chain, not a poll |
 | `examples/tango_epics_normalize.py:148` | downstream of interval chain | `write_pv` | `concat_map` | same |
 | `demo/synchrotron-beamline/bluesky/guarded_scan_bluesky.py:216` | Bluesky `docs` (hot Subject) | `write_pv`/`zip` of writes | `concat_map` | document stream must write in order |
 
@@ -96,10 +95,10 @@ Sequential single-item chains (source is a single-item observable — `flat_map`
 
 Retry internals: `RxEpics/python/src/rxepics/retry.py:45` and the retry examples above it in the
 chain. Already correct: `demo/dectris-integration/recipes.py` (`concat_map` with its own written
-rationale at ~L107). Inner hot-stream flattens (already correct merges, left alone):
-`demo/dectris-integration/facility_bridge.py`'s per-frame correlate step (uses `concat_map`
-already, see `recipes.py`), `demo/synchrotron-beamline/bluesky/guarded_scan_bluesky.py:216`'s
-inner writes reviewed above.
+rationale at ~L107). `demo/dectris-integration/facility_bridge.py`'s per-frame correlate step
+(inside `recipes.py::correlate_with`) already uses `concat_map`.
+`demo/synchrotron-beamline/bluesky/guarded_scan_bluesky.py:216` is **not** DO NOT TOUCH — see the
+JUDGMENT row above; it converts to `concat_map`.
 
 ---
 
@@ -118,11 +117,11 @@ as `// TODO(coalesce):` on the display-class rows).
 | `RxTango/cpp/examples/running_stats.cpp:52` | `concat_map` | window sample |
 | `RxTango/cpp/examples/stats.cpp:37` | `concat_map` | fixed-N sample |
 | `RxTango/cpp/examples/sliding_average.cpp:39` | `concat_map` | window sample |
-| `RxTango/cpp/examples/throttle.cpp:35` | *(unchanged)* | DO NOT TOUCH — throttle demo already coalesces via `.sample()` downstream |
+| `RxTango/cpp/examples/throttle.cpp:35` | `concat_map` | docstring commits to reading at full poll rate — coalescing is `sample_with_time()` downstream, not the read step |
 | `RxTango/cpp/examples/correlate.cpp:39` | `concat_map` | see Task D note |
 | `RxTango/cpp/examples/zip_attributes.cpp:40` | `concat_map` | see Task D note |
 | `RxTango/cpp/examples/zip_window.cpp:40,46` | `concat_map` | window buffer, both interval sources |
-| `RxTango/cpp/examples/retry.cpp:41` | `concat_map` | retries must not overlap (inner retry at :57 unchanged) |
+| `RxTango/cpp/examples/retry.cpp:40,56` (both branches) | `concat_map` | retries must not overlap between ticks — **corrected**: the ":57 inner retry unchanged" filing was wrong, that line's outer flatten is fed directly by the same `interval`, only the `.retry()` call *inside* it is DO NOT TOUCH |
 | `RxTango/cpp/examples/alarm_monitor.cpp:44` | `concat_map` | alarm edges must not be missed |
 | `RxTango/cpp/examples/calibration_pipeline.cpp:37` | `concat_map` | (write at :41 unchanged, sequential step) |
 
@@ -147,7 +146,7 @@ Sequential chains: `*/include/*/client.hpp`.
 |---|---|---|
 | `RxTango/java/examples/PollAttribute.java:40` | `onBackpressureLatest().concatMapSingle` | pure display poll |
 | `RxTango/java/examples/TangoTestStats.java:46` | `concatMapSingle` | fixed-N stats sample |
-| `RxTango/java/examples/TangoTestThrottle.java:51` | *(unchanged — throttle already coalesces downstream)* | DO NOT TOUCH |
+| `RxTango/java/examples/TangoTestThrottle.java:51` | `concatMapSingle` | comment commits to reading at full poll rate — coalescing is `throttleLast()` downstream, not the read step |
 | `RxTango/java/examples/TangoTestSlidingAverage.java:55` | `concatMapSingle` | sliding window |
 | `RxTango/java/examples/TangoTestRunningStats.java:80` | `concatMapSingle` | running stats window |
 | `RxTango/java/examples/TangoTestBackpressure.java:79` | *(unchanged)* | REVIEW — the demo's subject |
@@ -158,8 +157,8 @@ Sequential chains: `*/include/*/client.hpp`.
 | `RxTango/java/examples/CalibrationPipeline.java:57` | `concatMapSingle` | write at :65 stays sequential |
 | `RxTango/java/examples/AlarmMonitor.java:66` | `concatMapSingle` | alarm edges must not be missed |
 | `RxTango/java/examples/MultiDeviceSnapshot.java:88` | `onBackpressureLatest().concatMapSingle` | display poll of a pre-built fan-out snapshot; inner fan-out at :68 stays `flatMapSingle` |
-| `RxTango/java/examples/BeamLossScenario.java:188` | `onBackpressureLatest().concatMapSingle` | display-class scenario driver |
-| `RxTango/java/examples/StorageRingSimulation.java:403` | `onBackpressureLatest().concatMapSingle` | display-class BPM block |
+| `RxTango/java/examples/BeamLossScenario.java:188` | `concatMapSingle` (no `onBackpressureLatest` — the source is `Observable`, which has no backpressure protocol) | **corrected from an initial display-class filing**: this demo's whole point is alarm propagation on a state transition (its own docstring: "Demonstrates reactive alarm handling") — a coalescing poll could drop the one tick that caught it |
+| `RxTango/java/examples/StorageRingSimulation.java:403` | `concatMapSingle` (no `onBackpressureLatest` — `Observable` source) | **corrected from an initial display-class filing**: each tick computes a control action from sensor readings and *writes* it via `write_attribute` — a dropped tick skips a control decision, not just a display refresh |
 | `RxTine/java/examples/PollProperty.java:40` | `onBackpressureLatest().concatMapSingle` | pure display poll |
 | `RxTine/java/examples/CalibrationPipeline.java:52` | `concatMapSingle` | write at :59 stays sequential |
 
