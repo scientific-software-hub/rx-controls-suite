@@ -7,6 +7,7 @@ from rxtango.monitor import monitor_attribute, monitor_attribute_ts
 from rxtango.context import TangoContext
 from rxtango.client import TangoClient
 from rxtango.reading import Reading
+from rxtango.correlate import correlate_snapshot, correlate_latest, Correlated
 
 __all__ = [
     "read_attribute",
@@ -18,4 +19,7 @@ __all__ = [
     "TangoContext",
     "TangoClient",
     "Reading",
+    "correlate_snapshot",
+    "correlate_latest",
+    "Correlated",
 ]
