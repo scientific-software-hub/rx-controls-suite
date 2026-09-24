@@ -88,8 +88,10 @@ async def main():
     print("  " + "-" * 82)
 
     rx.interval(timedelta(milliseconds=interval_ms), scheduler=scheduler).pipe(
-        # Read one sample per tick.
-        ops.flat_map(lambda _: read_pv(pv_name, ctx)),
+        # Read one sample per tick. concat_map (not flat_map/exhaust): running
+        # stats must not lose a sample — dropping one under load would skew
+        # the mean/stddev — so the read serializes rather than coalesces.
+        ops.concat_map(lambda _: read_pv(pv_name, ctx)),
         # scan() folds each value into the running Stats accumulator and emits
         # a new Stats after every single sample — unlike reduce() which only
         # emits when the stream completes.

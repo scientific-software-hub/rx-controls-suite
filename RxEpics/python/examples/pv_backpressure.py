@@ -84,6 +84,10 @@ async def main():
         produced += 1
 
     # Fast producer: read at poll rate.
+    # REVIEW: kept as flat_map — this demo exists to show what an unbounded
+    # merge does under a fast producer, and the backpressure strategies
+    # below are the fix; coalescing to concat_map/exclusive here would
+    # delete the exact problem the demo is showing.
     upstream = rx.interval(timedelta(milliseconds=poll_ms), scheduler=scheduler).pipe(
         ops.flat_map(lambda _: read_pv(pv_name, ctx)),
         ops.do_action(on_next=on_produced),

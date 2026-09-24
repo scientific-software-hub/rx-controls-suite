@@ -67,11 +67,12 @@ async def main():
         done.set()
 
     # interval + take(N): emit exactly N ticks, then complete automatically.
-    # flat_map: one read per tick.
+    # concat_map (not flat_map/exhaust): a fixed-N sample must not drop or
+    # reorder a reading, or the final N-sample stats would be wrong.
     # to_list: Rx handles list allocation and synchronisation.
     rx.interval(timedelta(milliseconds=interval_ms), scheduler=scheduler).pipe(
         ops.take(n),
-        ops.flat_map(lambda _: read_pv(pv_name, ctx)),
+        ops.concat_map(lambda _: read_pv(pv_name, ctx)),
         ops.do_action(on_next=on_next),
         ops.to_list(),
     ).subscribe(

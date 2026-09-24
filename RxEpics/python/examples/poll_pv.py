@@ -41,10 +41,14 @@ async def main():
     print(f"Polling {pv_name} every {interval_ms} ms — Ctrl+C to stop")
 
     # interval() ticks every N ms and triggers a fresh read on each tick.
-    # flat_map turns each tick into a one-shot read Observable.
-    # No loop. No thread management. No counter.
+    # map + exclusive() (RxPY has no exhaust_map) turns each tick into a
+    # one-shot read Observable and drops any tick that arrives while a read
+    # is still in flight — the right choice for a display poll, where only
+    # the freshest value matters and a skipped tick is harmless. No loop.
+    # No thread management. No counter.
     rx.interval(timedelta(milliseconds=interval_ms), scheduler=scheduler).pipe(
-        ops.flat_map(lambda _: read_pv(pv_name, ctx))
+        ops.map(lambda _: read_pv(pv_name, ctx)),
+        ops.exclusive(),
     ).subscribe(
         on_next=lambda v: print(f"[{int(time.time() * 1000)}]  {v}"),
         on_error=lambda e: print(f"ERROR: {e}", file=sys.stderr),

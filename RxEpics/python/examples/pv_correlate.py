@@ -48,7 +48,9 @@ async def main():
         # rx.zip fires both reads in parallel and combines their results.
         # The pair is only emitted when BOTH reads complete successfully.
         # If either read fails, zip propagates the error — no half-pair.
-        ops.flat_map(
+        # concat_map (not flat_map): each tick's pair is serialized, so
+        # printed lines stay in tick order under load.
+        ops.concat_map(
             lambda _: rx.zip(
                 read_pv(pv1, ctx),
                 read_pv(pv2, ctx),

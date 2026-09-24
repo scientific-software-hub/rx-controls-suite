@@ -51,12 +51,19 @@ async def main():
     print("Ctrl+C to stop")
 
     rx.interval(timedelta(milliseconds=interval_ms), scheduler=scheduler).pipe(
-        # Step 1: read source PV
-        ops.flat_map(lambda _: read_pv(src_pv, ctx)),
+        # Step 1: read source PV. map + exclusive() (RxPY has no exhaust_map):
+        # this is a display-class calibration loop — only the freshest read
+        # matters, and dropping a tick while a slow read/write is in flight
+        # is harmless.
+        ops.map(lambda _: read_pv(src_pv, ctx)),
+        ops.exclusive(),
         # Step 2: apply linear calibration — pure function, no I/O
         ops.map(lambda raw: raw * gain + offset),
-        # Step 3: write calibrated value to destination PV
-        ops.flat_map(lambda cal: write_pv(dst_pv, cal, ctx)),
+        # Step 3: write calibrated value to destination PV. concat_map: a
+        # write must never race the next tick's write out of order (the
+        # upstream exclusive() already caps this at one in flight, but
+        # concat_map keeps the guarantee explicit and local).
+        ops.concat_map(lambda cal: write_pv(dst_pv, cal, ctx)),
         # Step 4: confirm
     ).subscribe(
         on_next=lambda v: print(

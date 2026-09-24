@@ -54,7 +54,9 @@ async def main():
         # On each tick, zip fires both reads concurrently.
         # The combiner lambda only runs when BOTH complete successfully.
         # If either read fails, zip propagates the error.
-        ops.flat_map(
+        # concat_map (not flat_map): each tick's pair is serialized, so
+        # printed lines stay in tick order under load.
+        ops.concat_map(
             lambda _: rx.zip(
                 read_pv(pv1, ctx),
                 read_pv(pv2, ctx),

@@ -89,10 +89,15 @@ async def main():
         )
         await done.wait()
     else:
-        # Continuous: repeat snapshot every interval_ms.
+        # Continuous: repeat snapshot every interval_ms. map + exclusive()
+        # (RxPY has no exhaust_map): this is a display-class poll — only the
+        # freshest snapshot matters, and dropping a tick while a slow
+        # snapshot is in flight is harmless. The inner fan-out inside
+        # snapshot() stays flat_map — concurrency there is the point.
         print(f"Polling every {interval_ms} ms — Ctrl+C to stop")
         rx.interval(timedelta(milliseconds=interval_ms), scheduler=scheduler).pipe(
-            ops.flat_map(lambda _: snapshot(pv_names, ctx))
+            ops.map(lambda _: snapshot(pv_names, ctx)),
+            ops.exclusive(),
         ).subscribe(
             on_next=print_snapshot,
             on_error=lambda e: print(f"Fatal: {e}", file=sys.stderr),

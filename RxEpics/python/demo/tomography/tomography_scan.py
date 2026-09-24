@@ -52,10 +52,16 @@ def poll_until(
     """Poll *pv_name* every *period_ms* until *predicate(value)* is true.
 
     Emits the first matching value, then completes.  Built from three
-    operators: interval → flat_map(read) → filter → take(1).
+    operators: interval → map(read) + exclusive() → filter → take(1).
+
+    map + exclusive() (RxPY has no exhaust_map), not flat_map: this waits
+    for a stable condition (e.g. "beam OK"), not a fleeting edge, so
+    dropping a tick while a slow read is in flight only delays detection by
+    one period — it never causes a false negative once the condition holds.
     """
     return rx.interval(timedelta(milliseconds=period_ms), scheduler=scheduler).pipe(
-        ops.flat_map(lambda _: read_pv(pv_name, ctx)),
+        ops.map(lambda _: read_pv(pv_name, ctx)),
+        ops.exclusive(),
         ops.filter(predicate),
         ops.take(1),
     )

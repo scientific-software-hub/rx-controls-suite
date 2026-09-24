@@ -51,9 +51,12 @@ async def main():
 
     # Build one polling+filtering stream per PV, then merge them all.
     # Each stream is independent: an error on one PV doesn't kill the others.
+    # concat_map (not flat_map/exhaust): an alarm edge must never be dropped
+    # or reordered — a coalescing poll could skip the one tick that crossed
+    # the threshold.
     streams = [
         rx.interval(timedelta(milliseconds=interval_ms), scheduler=scheduler).pipe(
-            ops.flat_map(lambda _: read_pv(pv_name, ctx)),
+            ops.concat_map(lambda _, n=pv_name: read_pv(n, ctx)),
             ops.filter(lambda v: abs(v) > threshold),
             ops.map(
                 lambda v, n=pv_name: (

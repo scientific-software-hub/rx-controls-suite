@@ -55,8 +55,10 @@ async def main():
     print("  " + "-" * 62)
 
     rx.interval(timedelta(milliseconds=interval_ms), scheduler=scheduler).pipe(
-        # One read per tick.
-        ops.flat_map(lambda _: read_pv(pv_name, ctx)),
+        # One read per tick. concat_map (not flat_map/exhaust): a sliding
+        # window must not lose a sample — a dropped tick would corrupt the
+        # window — so the read serializes rather than coalesces.
+        ops.concat_map(lambda _: read_pv(pv_name, ctx)),
         # buffer_with_count(N, 1): sliding window of size N, step 1.
         # Each emission is a List[float] containing the last N values.
         # No output until the first full window has accumulated (N ticks).

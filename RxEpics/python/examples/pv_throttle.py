@@ -61,8 +61,11 @@ async def main():
         print(f"  {v:+.6f}   (polled {polled:3d}, displayed {displayed:3d})")
 
     rx.interval(timedelta(milliseconds=poll_ms), scheduler=scheduler).pipe(
-        # Read at full poll rate — IOC sees every request.
-        ops.flat_map(lambda _: read_pv(pv_name, ctx)),
+        # Read at full poll rate — IOC sees every request. concat_map (not
+        # flat_map): serializes so every tick truly issues its own read in
+        # order, with no pileup under latency; the coalescing happens
+        # downstream via sample(), which is the whole point of this demo.
+        ops.concat_map(lambda _: read_pv(pv_name, ctx)),
         ops.do_action(on_next=on_polled),
         # sample: of all values arriving within each display_ms window,
         # emit only the most recent one and discard the rest.
