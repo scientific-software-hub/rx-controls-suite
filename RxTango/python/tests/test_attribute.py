@@ -3,12 +3,14 @@
 import asyncio
 from unittest.mock import patch
 
+import tango
 from reactivex.scheduler.eventloop import AsyncIOScheduler
 
-from rxtango.attribute import read_attribute
+from rxtango.attribute import read_attribute, read_attribute_ts
 from rxtango.context import TangoContext
+from rxtango.reading import Reading
 
-from conftest import FakeDeviceProxy
+from conftest import FAKE_ATTR_TIMESTAMP, FakeDeviceProxy
 
 
 def _run(coro):
@@ -90,3 +92,56 @@ def test_read_attribute_emits_integer_value():
 
     _run(run())
     assert results == [7]
+
+
+def test_read_attribute_ts_emits_reading_with_source_timestamp():
+    """read_attribute_ts carries the device's own time.totime()/quality,
+    not read-completion wall-clock time."""
+    fake_proxy = FakeDeviceProxy(read_value=3.14)
+    results = []
+
+    async def run():
+        loop = asyncio.get_running_loop()
+        scheduler = AsyncIOScheduler(loop)
+        done = asyncio.Event()
+
+        with patch.object(TangoContext, "get_proxy", return_value=fake_proxy):
+            read_attribute_ts("sys/tg_test/1", "double_scalar").subscribe(
+                on_next=results.append,
+                on_completed=done.set,
+                scheduler=scheduler,
+            )
+            await asyncio.wait_for(done.wait(), timeout=2.0)
+
+    _run(run())
+    assert len(results) == 1
+    reading = results[0]
+    assert isinstance(reading, Reading)
+    assert reading.value == 3.14
+    assert reading.ts == FAKE_ATTR_TIMESTAMP
+    assert reading.quality == tango.AttrQuality.ATTR_VALID
+
+
+def test_read_attribute_is_a_projection_of_read_attribute_ts():
+    """The float API is unchanged: same value, just without ts/quality."""
+    fake_proxy = FakeDeviceProxy(read_value=2.5)
+    plain, timestamped = [], []
+
+    async def run():
+        loop = asyncio.get_running_loop()
+        scheduler = AsyncIOScheduler(loop)
+        done1, done2 = asyncio.Event(), asyncio.Event()
+
+        with patch.object(TangoContext, "get_proxy", return_value=fake_proxy):
+            read_attribute("sys/tg_test/1", "double_scalar").subscribe(
+                on_next=plain.append, on_completed=done1.set, scheduler=scheduler,
+            )
+            read_attribute_ts("sys/tg_test/1", "double_scalar").subscribe(
+                on_next=timestamped.append, on_completed=done2.set, scheduler=scheduler,
+            )
+            await asyncio.wait_for(done1.wait(), timeout=2.0)
+            await asyncio.wait_for(done2.wait(), timeout=2.0)
+
+    _run(run())
+    assert plain == [2.5]
+    assert timestamped[0].value == 2.5

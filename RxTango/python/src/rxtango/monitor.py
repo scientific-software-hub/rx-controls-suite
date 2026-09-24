@@ -4,8 +4,10 @@ import asyncio
 
 import tango
 import reactivex as rx
+import reactivex.operators as ops
 
 from rxtango.context import TangoContext
+from rxtango.reading import Reading
 
 _EVENT_TYPE_MAP: dict[str, tango.EventType] = {
     "change":   tango.EventType.CHANGE_EVENT,
@@ -14,24 +16,12 @@ _EVENT_TYPE_MAP: dict[str, tango.EventType] = {
 }
 
 
-def monitor_attribute(device: str, name: str, event: str = "change") -> rx.Observable:
-    """Return a push Observable that emits the attribute value on every Tango event.
+def _monitor_events(device: str, name: str, event: str, extract) -> rx.Observable:
+    """Shared event-subscription plumbing.
 
-    *event* selects the event type: ``"change"`` (default), ``"periodic"``, or
-    ``"archive"``.  The Observable never completes — it runs until the returned
-    disposable is disposed, at which point ``proxy.unsubscribe_event`` is called.
-
-    Tango event callbacks arrive on a C++ thread; values are safely dispatched
-    back to the asyncio event loop via ``loop.call_soon_threadsafe``.
-
-    This mirrors :func:`rxepics.monitor.monitor_pv` and
-    ``RxTangoAttributeChangePublisher<T>`` in the Java library.
-
-    .. note::
-
-        Tango events require a properly configured Tango event system (zmq ports
-        reachable from the client, event heartbeat).  The subscription is created
-        lazily on the first subscriber.
+    *extract(event_data)* turns a Tango ``EventData`` into the value this
+    observable emits — a bare value for :func:`monitor_attribute`, a
+    :class:`Reading` for :func:`monitor_attribute_ts`.
     """
     event_type = _EVENT_TYPE_MAP.get(event.lower(), tango.EventType.CHANGE_EVENT)
 
@@ -48,7 +38,7 @@ def monitor_attribute(device: str, name: str, event: str = "change") -> rx.Obser
 
                 def callback(event_data):
                     try:
-                        value = event_data.attr_value.value
+                        value = extract(event_data)
                         loop.call_soon_threadsafe(observer.on_next, value)
                     except Exception:
                         pass
@@ -72,3 +62,47 @@ def monitor_attribute(device: str, name: str, event: str = "change") -> rx.Obser
         return dispose
 
     return rx.create(subscribe)
+
+
+def monitor_attribute_ts(device: str, name: str, event: str = "change") -> rx.Observable:
+    """Return a push Observable that emits a :class:`Reading` on every Tango
+    event.
+
+    Same contract as :func:`monitor_attribute` otherwise. ``event_data.attr_value``
+    is already a full ``DeviceAttribute`` (the same type ``read_attribute_ts``
+    reads), so ``.time``/``.quality`` are available with no extra request —
+    unlike caproto, which needs ``data_type='time'`` to get a time-bearing
+    response.
+    """
+
+    def extract(event_data):
+        da = event_data.attr_value
+        return Reading(value=da.value, ts=da.time.totime(), quality=da.quality)
+
+    return _monitor_events(device, name, event, extract)
+
+
+def monitor_attribute(device: str, name: str, event: str = "change") -> rx.Observable:
+    """Return a push Observable that emits the attribute value on every Tango event.
+
+    *event* selects the event type: ``"change"`` (default), ``"periodic"``, or
+    ``"archive"``.  The Observable never completes — it runs until the returned
+    disposable is disposed, at which point ``proxy.unsubscribe_event`` is called.
+
+    Tango event callbacks arrive on a C++ thread; values are safely dispatched
+    back to the asyncio event loop via ``loop.call_soon_threadsafe``.
+
+    This mirrors :func:`rxepics.monitor.monitor_pv` and
+    ``RxTangoAttributeChangePublisher<T>`` in the Java library.
+
+    A thin projection of :func:`monitor_attribute_ts` — the source-timestamp/
+    quality are discarded here, not re-requested; this is the same one Tango
+    event subscription either way.
+
+    .. note::
+
+        Tango events require a properly configured Tango event system (zmq ports
+        reachable from the client, event heartbeat).  The subscription is created
+        lazily on the first subscriber.
+    """
+    return monitor_attribute_ts(device, name, event).pipe(ops.map(lambda r: r.value))

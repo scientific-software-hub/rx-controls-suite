@@ -3,12 +3,14 @@
 import asyncio
 from unittest.mock import patch
 
+import tango
 from reactivex.scheduler.eventloop import AsyncIOScheduler
 
-from rxtango.monitor import monitor_attribute
+from rxtango.monitor import monitor_attribute, monitor_attribute_ts
 from rxtango.context import TangoContext
+from rxtango.reading import Reading
 
-from conftest import FakeDeviceProxy
+from conftest import FAKE_ATTR_TIMESTAMP, FakeDeviceProxy
 
 
 def _run(coro):
@@ -120,3 +122,57 @@ def test_monitor_propagates_subscription_error():
 
     assert len(errors) == 1
     assert isinstance(errors[0], RuntimeError)
+
+
+def test_monitor_ts_emits_reading_with_source_timestamp():
+    """monitor_attribute_ts carries the device's own time.totime()/quality
+    for every event, not just the first."""
+    fake_proxy = FakeDeviceProxy(read_value=0.0)
+    results = []
+
+    async def run():
+        loop = asyncio.get_running_loop()
+        scheduler = AsyncIOScheduler(loop)
+
+        with patch.object(TangoContext, "get_proxy", return_value=fake_proxy):
+            disposable = monitor_attribute_ts("device", "attr").subscribe(
+                on_next=results.append,
+                scheduler=scheduler,
+            )
+            await asyncio.sleep(0.1)
+            fake_proxy.fire(5.0)
+            await asyncio.sleep(0)
+            disposable.dispose()
+
+    _run(run())
+
+    assert len(results) == 1
+    reading = results[0]
+    assert isinstance(reading, Reading)
+    assert reading.value == 5.0
+    assert reading.ts == FAKE_ATTR_TIMESTAMP
+    assert reading.quality == tango.AttrQuality.ATTR_VALID
+
+
+def test_monitor_attribute_is_a_projection_of_monitor_attribute_ts():
+    """The float API is unchanged: same values, just without ts/quality."""
+    fake_proxy = FakeDeviceProxy(read_value=0.0)
+    results = []
+
+    async def run():
+        loop = asyncio.get_running_loop()
+        scheduler = AsyncIOScheduler(loop)
+
+        with patch.object(TangoContext, "get_proxy", return_value=fake_proxy):
+            disposable = monitor_attribute("device", "attr").subscribe(
+                on_next=results.append,
+                scheduler=scheduler,
+            )
+            await asyncio.sleep(0.1)
+            fake_proxy.fire(7.0)
+            await asyncio.sleep(0)
+            disposable.dispose()
+
+    _run(run())
+
+    assert results == [7.0]

@@ -1,10 +1,24 @@
 """Shared test fixtures and fakes for rxtango unit tests."""
 
 import asyncio
-from unittest.mock import MagicMock
 
 import pytest
+import tango
 from reactivex.scheduler.eventloop import AsyncIOScheduler
+
+# A fixed timestamp, distinct from "now", so a test asserting on it can't
+# accidentally pass because of a lucky wall-clock coincidence.
+FAKE_ATTR_TIMESTAMP = 1_700_000_000.0
+
+
+class FakeTimeVal:
+    """Mimics tango.TimeVal: only .totime() (used by read_attribute_ts /
+    monitor_attribute_ts) is modeled."""
+    def __init__(self, timestamp: float = FAKE_ATTR_TIMESTAMP):
+        self._timestamp = timestamp
+
+    def totime(self) -> float:
+        return self._timestamp
 
 
 # ---------------------------------------------------------------------------
@@ -12,9 +26,14 @@ from reactivex.scheduler.eventloop import AsyncIOScheduler
 # ---------------------------------------------------------------------------
 
 class FakeAttrValue:
-    """Minimal DeviceAttribute value mock."""
-    def __init__(self, value):
+    """Minimal DeviceAttribute mock — value, time, and quality, matching
+    what read_attribute_ts / monitor_attribute_ts actually read off a real
+    DeviceAttribute (verified against pytango 10.3.1)."""
+    def __init__(self, value, timestamp: float = FAKE_ATTR_TIMESTAMP,
+                 quality=tango.AttrQuality.ATTR_VALID):
         self.value = value
+        self.time = FakeTimeVal(timestamp)
+        self.quality = quality
 
 
 class FakeEventData:
@@ -54,9 +73,7 @@ class FakeDeviceProxy:
     # ---- attribute read ---------------------------------------------------
 
     def read_attribute(self, name: str):
-        attr = MagicMock()
-        attr.value = self._read_value
-        return attr
+        return FakeAttrValue(self._read_value)
 
     # ---- attribute write --------------------------------------------------
 
