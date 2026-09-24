@@ -64,7 +64,7 @@ This is the same logic, unmodified, from the
 supervisor_disp = health.pipe(
     ops.map(lambda h: h.current >= MIN_BEAM_CURRENT),   # -> bool: is the beam OK?
     ops.distinct_until_changed(),                       # only pass on state *changes*
-    ops.flat_map(
+    ops.concat_map(
         lambda ok: write_pv(PV_SHUTTER, 1 if ok else 0, ctx)
     ),
 ).subscribe(
@@ -80,8 +80,10 @@ supervisor_disp = health.pipe(
 Read it against the loop above, line for line: `map` computes `ok`, exactly like the
 `current >= MIN_BEAM_CURRENT` line. `distinct_until_changed` *is* the
 `if ok != _shutter_open` check — there's no `_shutter_open` global because the operator
-carries that state for you. `flat_map(write_pv(...))` is the PV write. Nothing here is a
-new concept; it's the loop everyone already writes, minus the bookkeeping.
+carries that state for you. `concat_map(write_pv(...))` is the PV write — serialized, not merged, so two rapid
+transitions can't land two writes out of order and leave the shutter in the wrong terminal
+state (see [Polling semantics](#polling-semantics) below). Nothing here is a new concept;
+it's the loop everyone already writes, minus the bookkeeping.
 
 And because `health` ([facility.py](demo/synchrotron-beamline/facility.py)) is `share()`d,
 the abort-trigger and the per-projection health gate elsewhere in the same demo subscribe
@@ -160,7 +162,7 @@ EPICS PV and a Tango attribute — different frameworks underneath, identical pi
 ```python
 # RxEpics/python/examples/pv_sliding_average.py
 rx.interval(timedelta(milliseconds=interval_ms), scheduler=scheduler).pipe(
-    ops.flat_map(lambda _: read_pv(pv_name, ctx)),
+    ops.concat_map(lambda _: read_pv(pv_name, ctx)),
     ops.buffer_with_count(window, 1),
     ops.map(lambda buf: (buf[-1], sum(buf) / len(buf))),   # (raw, smoothed)
 ).subscribe(on_next=lambda pair: print(f"raw={pair[0]:+.6f}  avg={pair[1]:.6f}"))
@@ -169,14 +171,16 @@ rx.interval(timedelta(milliseconds=interval_ms), scheduler=scheduler).pipe(
 ```python
 # RxTango/python/examples/sliding_average.py
 rx.interval(timedelta(milliseconds=interval_ms), scheduler=scheduler).pipe(
-    ops.flat_map(lambda _: read_attribute(device, "double_scalar")),
+    ops.concat_map(lambda _: read_attribute(device, "double_scalar")),
     ops.buffer_with_count(count=window, skip=1),
     ops.map(lambda buf: (buf[-1], sum(buf) / len(buf))),   # (raw, smoothed)
 ).subscribe(on_next=lambda pair: print(f"raw={pair[0]:+.6f}  avg={pair[1]:.6f}"))
 ```
 
 `read_pv` becomes `read_attribute` — that's the entire diff. Everything downstream of the read
-(`buffer_with_count`, the mean, the subscription) is untouched.
+(`buffer_with_count`, the mean, the subscription) is untouched. Both use `concat_map`, not
+`flat_map`: a sliding window must never lose a sample, so the read serializes rather than
+coalesces — see [Polling semantics](#polling-semantics).
 
 EPICS also gets a **push-native** version for free, since `monitor_pv` wraps caproto's
 subscription (not a poll loop) behind the exact same operator:
@@ -190,8 +194,58 @@ auto sub = rxepics::monitor_pv<double>(pv, ctx)
     .subscribe([](double avg) { std::cout << "  avg: " << avg << "\n"; });
 ```
 
-No `rx.interval`, no `flat_map` — the CA monitor callback *is* the source. `.buffer(N, 1)` doesn't
-care whether upstream is a poll or a push; it composes identically either way.
+No `rx.interval`, no poll operator at all — the CA monitor callback *is* the source. `.buffer(N, 1)`
+doesn't care whether upstream is a poll or a push; it composes identically either way. `monitor_pv`
+itself is cold at the Rx layer (`rx.create`, one CA callback per subscriber) but warm on the wire:
+caproto deduplicates the underlying CA subscription by its parameters, so two Rx subscribers to
+`monitor_pv(pv, ctx)` still produce exactly one `EventAdd` — see
+[Polling semantics](#polling-semantics).
+
+---
+
+## Polling semantics
+
+A *repeating* source (`rx.interval`, `Flowable.interval`, a `rxcpp::observable<>::interval`) that
+feeds a per-tick read must not use `flat_map`/`flatMap`. `flat_map` merges with unbounded
+concurrency and no ordering guarantee: under real latency, reads pile up without a bound and can
+arrive out of chronological order, which silently defeats a downstream `distinct_until_changed`.
+Pick the operator by what the consumer needs — the choice is the same across Python, Java, and
+C++:
+
+| Consumer intent | Operator | Why |
+|---|---|---|
+| Pure display gauge — only the freshest value matters | RxPY: `map(read)` + `exclusive()` (no `exhaust_map`); RxJava: `onBackpressureLatest().concatMapSingle(read)` (no `exhaustMap`); RxCpp: `concat_map` (no exhaust idiom) | never piles up; a skipped tick is harmless |
+| Must not lose a **sample** (sliding average, running stats, any window) | `concat_map` / `concatMapSingle` | dropping a sample corrupts the window; order preserved |
+| Must not miss a **state transition** (supervisor gate, alarm edge) | `concat_map` / `concatMapSingle`, and prefer a push monitor when one exists | a poll — any poll — can still miss a transition that happens and reverts between two ticks; only a push notification closes that gap |
+| Parallel fan-out snapshot (read many things at once) | keep `flat_map`/`flatMap` | concurrency is the feature here, not a bug |
+
+**The transition-loss caveat.** Don't default an edge-sensitive consumer (a shutter/scan gate
+reacting to a state change) to a coalescing operator: if beam goes OK → LOST (one tick) → OK and
+the coalesce skips the LOST reading, the consumer never sees the transition — worse than a
+backlog. `RxTango/demo/scripts/{BeamLossInterlocks,SmoothedCurrentWriter}.java` and
+`demo/dectris-integration/recipes.py`'s `concat_map` (with its own written rationale) are the
+in-repo precedents this table generalizes; `docs/poll-operator-audit.md` has the full file-by-file
+classification this suite was brought into line with.
+
+**A write behind `distinct_until_changed` is not exempt.** The shutter-supervisor snippet above
+looks like a filter, but two rapid transitions can still start two concurrent writes that complete
+out of order and leave the actuator in the wrong terminal state — `concat_map`, not `flat_map`,
+for exactly the same reason as a read.
+
+## Correlation and timestamps
+
+`rx.zip(read_a, read_b)` guarantees the pair is only emitted once **both** reads complete — that
+is *arrival-index* consistency, not *time* consistency. Two reads issued on the same tick can
+still complete up to a round trip apart against moving values; `zip` alone cannot tell you how far
+apart they actually were. `read_pv_ts` / `read_attribute_ts` / `monitor_pv_ts` /
+`monitor_attribute_ts` emit a `Reading(value, ts, quality)` carrying the **source's own**
+timestamp — the CA server's or the Tango device's, not the moment the read happened to return,
+which on a slow-changing value can be considerably later — and `correlate_snapshot`/
+`correlate_latest` zip N of them into one measured `skew`, optionally dropping or flagging any
+tuple whose skew (or quality) violates a tolerance. `read_pv` / `read_attribute` /
+`monitor_pv` / `monitor_attribute` are unchanged thin projections of their `_ts` counterparts, so
+existing callers see no difference. Every example that used to claim two zipped reads were
+"always in sync" or an "atomic pair" now prints the measured skew instead.
 
 The same fluent, cross-type read → calibrate → write → format → write → read-back pipeline, built
 from `EpicsClient()` / `TangoClient()`, exists unmodified across the suite:

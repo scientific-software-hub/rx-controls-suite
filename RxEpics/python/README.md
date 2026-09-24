@@ -21,7 +21,7 @@ The core claim: EPICS is already a streaming system. Channel Access monitors, DB
 
 **Single-shot vs push.** RxEpics draws a hard line between two kinds of interaction.
 
-`read_pv()` and `write_pv()` are *single-shot*: subscribe once, receive one value, the observable completes. They are the reactive equivalent of `caget` / `caput`. Compose them with `rx.interval()` and `flat_map` to build a polling loop without a loop.
+`read_pv()` and `write_pv()` are *single-shot*: subscribe once, receive one value, the observable completes. They are the reactive equivalent of `caget` / `caput`. Compose them with `rx.interval()` to build a polling loop without a loop — pick `map` + `exclusive()`, `concat_map`, or `flat_map` by what the consumer needs (see [Polling semantics](#polling-semantics) in the root README); a bare `flat_map` is rarely the right default.
 
 `monitor_pv()` is *push*: it wraps a native CA monitor subscription and emits a value every time the IOC sends a DBE_VALUE update. The IOC drives the stream; nothing polls.
 
@@ -77,10 +77,10 @@ RxEpics/python/
 │
 ├── examples/               ← 15 standalone scripts, one pattern each
 │   ├── README.md           ← detailed per-example documentation
-│   ├── poll_pv.py          ← interval → flat_map(read)
+│   ├── poll_pv.py          ← interval → map(read) + exclusive()
 │   ├── monitor_pv.py       ← push subscription, no polling
 │   ├── multi_pv_snapshot.py
-│   ├── pv_correlate.py     ← rx.zip — atomic pair
+│   ├── pv_correlate.py     ← correlate_snapshot — measured timestamp skew
 │   ├── alarm_monitor.py    ← rx.merge — fan-in alarm stream
 │   ├── calibration_pipeline.py
 │   ├── pv_pipeline.py      ← EpicsClient fluent chain
@@ -214,11 +214,15 @@ read_pv("TEST:CALC", ctx).subscribe(
 )
 ```
 
-Compose with `rx.interval` for polling:
+Compose with `rx.interval` for polling — `map` + `exclusive()`, not `flat_map` (RxPY has no
+`exhaust_map`): only the freshest read matters for a display poll, and a skipped tick under load
+is harmless. See [Polling semantics](#polling-semantics) for when to reach for `concat_map`
+instead.
 
 ```python
 rx.interval(timedelta(milliseconds=500), scheduler=scheduler).pipe(
-    ops.flat_map(lambda _: read_pv("TEST:CALC", ctx))
+    ops.map(lambda _: read_pv("TEST:CALC", ctx)),
+    ops.exclusive(),
 ).subscribe(on_next=print)
 ```
 
@@ -251,17 +255,56 @@ monitor_pv("TEST:CALC", ctx).pipe(
 ).subscribe(on_next=lambda avg: print(f"smoothed: {avg:.4f}"))
 ```
 
+**Cold in Rx, warm on the wire.** `monitor_pv` is built on `rx.create`, so it is *cold*: each
+`.subscribe()` call runs the subscribe function again, registering its own callback. It is
+nonetheless *warm* on the CA wire, because caproto caches one `Subscription` object per
+`(PV, params)` and never opens a second `EventAdd` for the same parameters — two independent
+`monitor_pv("TEST:CALC", ctx)` subscribers still produce exactly one CA subscription.
+`ops.share()` deduplicates something different: it turns *this Python process's* multiple
+`.subscribe()` calls into one upstream subscription at the Rx layer (see `ring_health()` in
+`demo/synchrotron-beamline/facility.py`), which matters when the upstream is a poll (each
+subscriber would otherwise trigger its own `rx.interval`) — for `monitor_pv`, caproto has
+already done that deduplication one layer down, so `share()` saves nothing further on the wire,
+only Rx-level bookkeeping.
+
+### `read_pv_ts(pv_name, ctx) → rx.Observable` · `monitor_pv_ts(pv_name, ctx) → rx.Observable`
+
+Timestamped variants of `read_pv` / `monitor_pv`: each emits a `Reading(value, ts, quality)`
+instead of a bare `float`. `ts` is the CA server's own timestamp of when the value last
+changed (`data_type='time'`), which on a slow-changing PV can be considerably older than the
+read-completion instant; `quality` is caproto's `AlarmSeverity`. `read_pv` and `monitor_pv` are
+thin projections — `*_ts(...).pipe(ops.map(lambda r: r.value))` — so existing callers of the
+float API see no change. See [Correlation and timestamps](#correlation-and-timestamps) below.
+
 ### `monitor_errors(pv_name, ctx) → rx.Observable`
 
 Push subscription of `PvUpdateError` — one value per per-update failure on
 *pv_name* (bad conversion, non-normal CA status). Shares its CA subscription
-with `monitor_pv` on the same PV. Never completes; never calls `on_error` for
-a per-update failure — only a setup failure is terminal, matching `monitor_pv`.
+with `monitor_pv` on the same PV (all three now request `data_type='time'`,
+so the subscription-cache key still matches). Never completes; never calls
+`on_error` for a per-update failure — only a setup failure is terminal,
+matching `monitor_pv`.
 
 ```python
 monitor_errors("TEST:CALC", ctx).subscribe(
     on_next=lambda err: log.warning("bad update: %s", err),
 )
+```
+
+### `correlate_snapshot(*sources, tolerance_s=None, on_violation="drop") → rx.Observable`
+
+Zips N `*_ts` sources into one `Correlated(values, skew, violated)`, where `skew` is the
+measured spread between the sources' own timestamps — the number `rx.zip` alone cannot give
+you, since "both completed" says nothing about whether the two values describe the same
+instant. See [Correlation and timestamps](#correlation-and-timestamps) below;
+`correlate_latest` is the `combine_latest` sibling for correlating monitors.
+
+```python
+correlate_snapshot(
+    read_pv_ts("TEST:CALC", ctx),
+    read_pv_ts("TEST:DOUBLE", ctx),
+    tolerance_s=0.05,
+).subscribe(on_next=lambda c: print(f"{c.values}  skew={c.skew:.4f}s"))
 ```
 
 ### `connection_status(pv_name, ctx) → rx.Observable`
@@ -336,12 +379,12 @@ and annotated key code for every example.
 
 | Script | Pattern | Key operators |
 |--------|---------|---------------|
-| `poll_pv.py` | Continuous polling without a loop | `interval · flat_map` |
+| `poll_pv.py` | Continuous polling without a loop | `interval · map · exclusive` |
 | `monitor_pv.py` | IOC-driven push stream | `monitor_pv` |
 | `multi_pv_snapshot.py` | Parallel snapshot of N PVs | `from_iterable · flat_map · to_list` |
-| `pv_correlate.py` | Atomic pair — both PVs from the same tick | `zip` |
+| `pv_correlate.py` | Correlated pair with measured timestamp skew | `correlate_snapshot` |
 | `alarm_monitor.py` | Fan-in alarm stream across N PVs | `merge · filter · catch` |
-| `calibration_pipeline.py` | Continuous read → calibrate → write loop | `interval · flat_map · map` |
+| `calibration_pipeline.py` | Continuous read → calibrate → write loop | `interval · exclusive · map · concat_map` |
 | `pv_pipeline.py` | Fluent 6-step chain via EpicsClient | `EpicsClient` |
 | `pv_throttle.py` | Rate control — fast producer, slow consumer | `sample` |
 | `pv_sliding_average.py` | Rolling mean over last N samples | `buffer_with_count · map` |
@@ -365,8 +408,13 @@ be visible after every sample.
 
 `rx.zip(obs1, obs2, ...)` issues all observables concurrently and emits a tuple
 only when every one has completed. If any observable errors, the combined
-observable errors. Use it for correlated multi-PV reads where a half-delivered
-pair would be meaningless.
+observable errors. Use it for multi-PV reads where a half-delivered pair would
+be meaningless — but note that "both completed" is *arrival-index* consistency,
+not *time* consistency: two reads issued on the same tick can still complete a
+round trip apart against moving values. Where the values are like-typed physical
+quantities and simultaneity is the actual point, use `correlate_snapshot`
+(`rxepics.correlate`) instead — it zips `_ts` sources and reports the measured
+skew between their source timestamps, rather than assuming it away.
 
 `rx.merge(*streams)` multiplexes N independent observables into one. Each stream
 runs in parallel; values appear in arrival order. A `catch` on each sub-stream
@@ -395,8 +443,10 @@ from single operators to a full acquisition sequence:
   No `asyncio.sleep`, no manual timeout logic.
 - **Detector trigger + exposure wait** — write ACQUIRE → poll ACQUIRING=1 →
   poll ACQUIRING=0. The same `poll_until()` primitive used throughout.
-- **Concurrent diagnostic reads** — `rx.zip` reads counts, beam current, and
-  beam position simultaneously after each exposure.
+- **Concurrent diagnostic reads** — `rx.zip` fires reads for counts, beam current, and
+  beam position concurrently after each exposure (a heterogeneous snapshot, not a
+  simultaneity claim — see [Correlation and timestamps](#correlation-and-timestamps)
+  in the root README for where `correlate_snapshot` applies instead).
 - **Fan-out to two consumers** — `ops.share()` makes the cold scan observable
   hot so both branches see every frame. The HDF5 writer receives every frame.
   The live display receives a throttled view via `ops.sample()`.
@@ -533,7 +583,10 @@ import name is also `rxepics`.
 
 ```python
 # All public names available at the top level:
-from rxepics import read_pv, write_pv, monitor_pv, EpicsContext, EpicsClient
+from rxepics import (
+    read_pv, read_pv_ts, write_pv, monitor_pv, monitor_pv_ts,
+    EpicsContext, EpicsClient, Reading, correlate_snapshot, correlate_latest,
+)
 ```
 
 ---

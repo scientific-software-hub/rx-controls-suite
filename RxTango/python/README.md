@@ -6,7 +6,10 @@ Wrap [PyTango](https://pytango.readthedocs.io/) (`DeviceProxy`) with
 The **same ReactiveX operator vocabulary** that drives
 [rxtango/java](../java/) and [rxepics/python](../../RxEpics/python/) works
 identically here — `zip`, `buffer_with_count`, `scan`, `merge`, `sample`,
-`flat_map` — with a thin Tango wrapper underneath.
+`concat_map`/`exclusive` for polling — with a thin Tango wrapper underneath.
+See [Polling semantics](../../README.md#polling-semantics) in the root README
+for when a poll reaches for which operator (a bare `flat_map` on a repeating
+source is almost never the right choice).
 
 ```python
 import asyncio
@@ -67,6 +70,24 @@ Single-shot attribute read.  Emits `DeviceAttribute.value` and completes.
 read_attribute(device, "double_scalar").subscribe(on_next=print, ...)
 ```
 
+### `read_attribute_ts(device, name) → Observable` · `monitor_attribute_ts(device, name, event="change") → Observable`
+
+Timestamped variants of `read_attribute` / `monitor_attribute`: each emits a
+`Reading(value, ts, quality)` instead of a bare value. `ts` is
+`DeviceAttribute.time.totime()` — the device server's own timestamp of when
+the attribute last changed, which on a slow-changing attribute can be
+considerably older than the read-completion instant; `quality` is the
+attribute's `tango.AttrQuality`. `read_attribute`/`monitor_attribute` are
+thin projections — `*_ts(...).pipe(ops.map(lambda r: r.value))` — so
+existing callers of the plain-value API see no change.
+
+### `correlate_snapshot(*sources, tolerance_s=None, on_violation="drop") → Observable`
+
+Zips N `*_ts` sources into one `Correlated(values, skew, violated)`, where
+`skew` is the measured spread between the sources' own timestamps — see
+[Correlated reads with measured skew](#correlated-reads-with-measured-skew)
+below. `correlate_latest` is the `combine_latest` sibling for monitors.
+
 ### `write_attribute(device, name, value) → Observable`
 
 Single-shot attribute write.  **Re-emits the written value** so writes can
@@ -102,6 +123,14 @@ monitor_attribute(device, "double_scalar", event="periodic").subscribe(
 
 > **Note:** Requires a Tango event system with reachable zmq ports.
 
+**Cold, with no dedup layer.** Unlike `RxEpics/python`'s `monitor_pv` — where caproto caches
+one CA `Subscription` per `(PV, params)` regardless of how many Rx subscribers ask for it —
+`monitor_attribute` has no equivalent cache: each `.subscribe()` call makes its own
+`proxy.subscribe_event()` call. `TangoContext` only caches the `DeviceProxy` itself, not the
+event subscription. If you need N consumers of one attribute's events to share a single
+underlying Tango subscription, put `ops.share()` in front of the observable explicitly — it
+is doing real deduplication work here, not the no-op-on-the-wire it would be for `monitor_pv`.
+
 ### `TangoContext` — DeviceProxy cache
 
 ```python
@@ -126,28 +155,41 @@ TangoClient() \
 
 ### Polling — no loop, no thread
 
+`map` + `exclusive()` (RxPY has no `exhaust_map`), not `flat_map`: only the freshest read
+matters for a display poll, and a skipped tick under load is harmless.
+
 ```python
 rx.interval(timedelta(milliseconds=500), scheduler=scheduler).pipe(
-    ops.flat_map(lambda _: read_attribute(device, "double_scalar")),
+    ops.map(lambda _: read_attribute(device, "double_scalar")),
+    ops.exclusive(),
 ).subscribe(on_next=print, ...)
 ```
 
-### Correlated reads (zip)
+### Correlated reads with measured skew
 
-Both reads fire in parallel; pair emitted only when **both** complete:
+Both reads fire in parallel; the pair is emitted only when **both** complete — same
+guarantee as a bare `rx.zip`. `correlate_snapshot` additionally reports the measured gap
+between the two attributes' own `DeviceAttribute.time` values, since "both completed" says
+nothing on its own about whether the two readings describe the same instant:
 
 ```python
-rx.zip(
-    read_attribute(device, "current"),
-    read_attribute(device, "beam_position"),
-).subscribe(on_next=lambda pair: process(*pair), ...)
+from rxtango import read_attribute_ts
+from rxtango.correlate import correlate_snapshot
+
+correlate_snapshot(
+    read_attribute_ts(device, "current"),
+    read_attribute_ts(device, "beam_position"),
+).subscribe(on_next=lambda c: process(*c.values, skew=c.skew), ...)
 ```
 
 ### Sliding average
 
+`concat_map`, not `flat_map`: a sliding window must never lose a sample — a dropped tick
+would corrupt the window.
+
 ```python
 rx.interval(...).pipe(
-    ops.flat_map(lambda _: read_attribute(device, "value")),
+    ops.concat_map(lambda _: read_attribute(device, "value")),
     ops.buffer_with_count(count=5, skip=1),
     ops.map(lambda buf: sum(buf) / len(buf)),
 )
