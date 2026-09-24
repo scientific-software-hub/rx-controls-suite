@@ -33,12 +33,14 @@ int main(int argc, char* argv[]) {
     std::cout << "Calibration pipeline on " << device
               << "  every " << interval_ms << " ms  (Ctrl+C to stop)\n\n";
 
+    // concat_map (RxCpp has no exhaust): serializes both the read and the
+    // write so neither races the next tick's out of order.
     auto sub = rxcpp::observable<>::interval(std::chrono::milliseconds(interval_ms))
-        .flat_map([device](long) {
+        .concat_map([device](long) {
             return rxtango::read_attribute<double>(device, "double_scalar");
         })
         .map([](double v) { return std::abs(v) * 2.0 + 1.5; })
-        .flat_map([device](double calibrated) {
+        .concat_map([device](double calibrated) {
             return rxtango::write_attribute<double>(device, "double_scalar_w", calibrated);
         })
         .subscribe(

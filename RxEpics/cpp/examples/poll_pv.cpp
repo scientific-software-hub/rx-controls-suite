@@ -29,8 +29,10 @@ int main(int argc, char* argv[]) {
 
     std::cout << "Polling " << pv << " every " << interval_ms << " ms  (Ctrl+C to stop)\n\n";
 
+    // concat_map (RxCpp has no exhaust): serializes reads so they stay in
+    // order under load, with no unbounded pileup.
     auto sub = rxcpp::observable<>::interval(std::chrono::milliseconds(interval_ms))
-        .flat_map([pv, &ctx](long) { return rxepics::read_pv<double>(pv, ctx); })
+        .concat_map([pv, &ctx](long) { return rxepics::read_pv<double>(pv, ctx); })
         .subscribe(
             [](double v) { std::cout << "  " << v << "\n"; },
             [](std::exception_ptr e) {

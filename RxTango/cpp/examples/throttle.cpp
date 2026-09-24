@@ -30,9 +30,12 @@ int main(int argc, char* argv[]) {
     std::cout << "Throttle: polling every " << poll_ms << " ms, displaying every "
               << display_ms << " ms  (Ctrl+C to stop)\n\n";
 
-    // Fast poll → throttle via sample() to display rate
+    // Fast poll → throttle via sample() to display rate. concat_map (not
+    // flat_map): every tick issues its own read, in order, with no pileup
+    // under latency — sample_with_time() does the coalescing downstream,
+    // which is this demo's whole point.
     auto sub = rxcpp::observable<>::interval(std::chrono::milliseconds(poll_ms))
-        .flat_map([device, attr](long) {
+        .concat_map([device, attr](long) {
             return rxtango::read_attribute<double>(device, attr);
         })
         .sample_with_time(std::chrono::milliseconds(display_ms))

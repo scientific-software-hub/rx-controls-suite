@@ -48,8 +48,10 @@ int main(int argc, char* argv[]) {
               << std::setw(14) << "stddev" << "\n"
               << std::string(38, '-') << "\n";
 
+    // concat_map (RxCpp has no exhaust): running stats must not lose a
+    // sample — dropping one under load would skew the mean/stddev.
     auto sub = rxcpp::observable<>::interval(std::chrono::milliseconds(interval_ms))
-        .flat_map([device, attr](long) {
+        .concat_map([device, attr](long) {
             return rxtango::read_attribute<double>(device, attr);
         })
         .scan(Stats{0, 0.0, 0.0}, welford_update)

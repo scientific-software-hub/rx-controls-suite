@@ -36,9 +36,11 @@ int main(int argc, char* argv[]) {
               << "  retries=" << retries << "  (Ctrl+C to stop)\n\n";
 
     if (strategy == "fixed") {
-        // retry(N) on the outer polling chain
+        // retry(N) on the outer polling chain. concat_map (RxCpp has no
+        // exhaust): a tick's retries must finish before the next tick's
+        // read starts, or overlapping retries could race two reads.
         rxcpp::observable<>::interval(std::chrono::milliseconds(interval_ms))
-            .flat_map([device, attr](long) {
+            .concat_map([device, attr](long) {
                 return rxtango::read_attribute<double>(device, attr);
             })
             .retry(retries)
@@ -52,9 +54,12 @@ int main(int argc, char* argv[]) {
                 }
             );
     } else {
-        // inner retry — each read retries independently; outer pipeline sees only successes
+        // inner retry — each read retries independently; outer pipeline sees
+        // only successes. concat_map (RxCpp has no exhaust) on the outer
+        // flatten for the same reason as the "fixed" branch above; the
+        // inner .retry() itself is unchanged.
         rxcpp::observable<>::interval(std::chrono::milliseconds(interval_ms))
-            .flat_map([device, attr, retries](long) {
+            .concat_map([device, attr, retries](long) {
                 return rxtango::read_attribute<double>(device, attr)
                     .retry(retries)
                     .on_error_resume_next([](std::exception_ptr) {

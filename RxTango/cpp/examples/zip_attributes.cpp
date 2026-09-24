@@ -35,9 +35,11 @@ int main(int argc, char* argv[]) {
               << std::setw(20) << attr1 << "  " << std::setw(20) << attr2 << "\n"
               << std::string(44, '-') << "\n";
 
-    // Mirrors Java: Flowable.interval().flatMapSingle(tick -> Single.zip(readA, readB, combiner))
+    // Mirrors Java: Flowable.interval().concatMapSingle(tick -> Single.zip(readA, readB, combiner))
+    // concat_map (RxCpp has no exhaust): each tick's pair is serialized, so
+    // printed lines stay in tick order under load.
     auto sub = rxcpp::observable<>::interval(std::chrono::milliseconds(interval_ms))
-        .flat_map([device, attr1, attr2](long) {
+        .concat_map([device, attr1, attr2](long) {
             // zip two concurrent reads — pair only produced when BOTH complete
             return rxcpp::observable<>::zip(
                 [](double a, double b) { return std::make_pair(a, b); },

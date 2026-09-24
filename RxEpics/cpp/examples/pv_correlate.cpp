@@ -35,8 +35,10 @@ int main(int argc, char* argv[]) {
               << std::setw(12) << "diff" << "\n"
               << std::string(46, '-') << "\n";
 
+    // concat_map (RxCpp has no exhaust): each tick's pair is serialized, so
+    // printed lines stay in tick order under load.
     auto sub = rxcpp::observable<>::interval(std::chrono::milliseconds(interval_ms))
-        .flat_map([pv1, pv2, &ctx](long) {
+        .concat_map([pv1, pv2, &ctx](long) {
             return rxcpp::observable<>::zip(
                 [](double a, double b) { return std::make_pair(a, b); },
                 rxepics::read_pv<double>(pv1, ctx),

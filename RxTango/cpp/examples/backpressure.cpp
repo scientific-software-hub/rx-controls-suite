@@ -40,6 +40,9 @@ int main(int argc, char* argv[]) {
     std::cout << "Backpressure strategy: " << strategy
               << "  poll=" << poll_ms << "ms  display=" << display_ms << "ms  (Ctrl+C to stop)\n\n";
 
+    // REVIEW: kept as flat_map — this demo exists to show what an unbounded
+    // merge does under a fast producer; coalescing here would delete the
+    // exact problem the backpressure strategies below are the fix for.
     auto source = rxcpp::observable<>::interval(std::chrono::milliseconds(poll_ms))
         .flat_map([device, attr](long) {
             return rxtango::read_attribute<double>(device, attr);

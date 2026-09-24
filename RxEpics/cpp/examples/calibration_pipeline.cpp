@@ -32,12 +32,14 @@ int main(int argc, char* argv[]) {
     std::cout << src_pv << " → calibrate → " << dst_pv
               << "  every " << interval_ms << " ms  (Ctrl+C to stop)\n\n";
 
+    // concat_map (RxCpp has no exhaust): serializes both the read and the
+    // write so neither races the next tick's out of order.
     auto sub = rxcpp::observable<>::interval(std::chrono::milliseconds(interval_ms))
-        .flat_map([src_pv, &ctx](long) {
+        .concat_map([src_pv, &ctx](long) {
             return rxepics::read_pv<double>(src_pv, ctx);
         })
         .map([](double v) { return std::abs(v) * 2.0 + 1.5; })
-        .flat_map([dst_pv, &ctx](double calibrated) {
+        .concat_map([dst_pv, &ctx](double calibrated) {
             return rxepics::write_pv<double>(dst_pv, calibrated, ctx);
         })
         .subscribe(

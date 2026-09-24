@@ -35,15 +35,17 @@ int main(int argc, char* argv[]) {
     std::cout << "Window-zip: window=" << window_size
               << "  " << attr1 << " × " << attr2 << "  (Ctrl+C to stop)\n\n";
 
-    // Buffer N from each stream, zip the buffer pairs, compute means
+    // Buffer N from each stream, zip the buffer pairs, compute means.
+    // concat_map (RxCpp has no exhaust): a window buffer must not lose a
+    // sample — a dropped tick would corrupt the window.
     auto stream1 = rxcpp::observable<>::interval(std::chrono::milliseconds(interval_ms))
-        .flat_map([device, attr1](long) {
+        .concat_map([device, attr1](long) {
             return rxtango::read_attribute<double>(device, attr1);
         })
         .buffer(window_size);
 
     auto stream2 = rxcpp::observable<>::interval(std::chrono::milliseconds(interval_ms))
-        .flat_map([device, attr2](long) {
+        .concat_map([device, attr2](long) {
             return rxtango::read_attribute<double>(device, attr2);
         })
         .buffer(window_size);

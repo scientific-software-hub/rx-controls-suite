@@ -36,12 +36,15 @@ int main(int argc, char* argv[]) {
 
     std::cout << "Alarm monitor — threshold = " << threshold << "  (Ctrl+C to stop)\n\n";
 
-    // Build one poll stream per device, merge all into one alarm stream
+    // Build one poll stream per device, merge all into one alarm stream.
+    // concat_map (RxCpp has no exhaust): an alarm edge must never be
+    // dropped or reordered — a coalescing poll could skip the one tick
+    // that crossed the threshold.
     std::vector<rxcpp::observable<std::pair<std::string,double>>> streams;
     for (auto& dev : devices) {
         streams.push_back(
             rxcpp::observable<>::interval(std::chrono::milliseconds(interval_ms))
-                .flat_map([dev](long) {
+                .concat_map([dev](long) {
                     return rxtango::read_attribute<double>(dev, "double_scalar")
                         .map([dev](double v) { return std::make_pair(dev, v); })
                         .on_error_resume_next([dev](std::exception_ptr) {

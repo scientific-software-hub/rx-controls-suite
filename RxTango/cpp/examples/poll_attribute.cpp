@@ -33,10 +33,12 @@ int main(int argc, char* argv[]) {
               << "  " << std::setw(20) << "value" << "\n"
               << "  " << std::string(22, '-') << "\n";
 
-    // Interval on a new-thread scheduler; flat_map into single-shot reads.
-    // Mirrors: Flowable.interval(ms).flatMapSingle(i -> read)
+    // Interval on a new-thread scheduler; concat_map into single-shot reads
+    // (RxCpp has no exhaust — concat_map serializes so reads stay in order
+    // under load, with no unbounded pileup).
+    // Mirrors: Flowable.interval(ms).concatMapSingle(i -> read)
     auto sub = rxcpp::observable<>::interval(std::chrono::milliseconds(interval_ms))
-        .flat_map([device, attr](long) {
+        .concat_map([device, attr](long) {
             return rxtango::read_attribute<double>(device, attr);
         })
         .subscribe(

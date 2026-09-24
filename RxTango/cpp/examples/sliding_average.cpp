@@ -35,8 +35,10 @@ int main(int argc, char* argv[]) {
     std::cout << "Sliding average (window=" << window_size << ") of "
               << device << "/" << attr << "  (Ctrl+C to stop)\n\n";
 
+    // concat_map (RxCpp has no exhaust): a sliding window must not lose a
+    // sample — a dropped tick would corrupt the window.
     auto sub = rxcpp::observable<>::interval(std::chrono::milliseconds(interval_ms))
-        .flat_map([device, attr](long) {
+        .concat_map([device, attr](long) {
             return rxtango::read_attribute<double>(device, attr);
         })
         // Overlapping windows of size N, advancing by 1 each step

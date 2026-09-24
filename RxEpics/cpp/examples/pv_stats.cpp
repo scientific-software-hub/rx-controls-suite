@@ -34,8 +34,10 @@ int main(int argc, char* argv[]) {
     std::condition_variable cv;
     bool                    done = false;
 
+    // concat_map (RxCpp has no exhaust): a fixed-N sample must not drop or
+    // reorder a reading, or the final N-sample stats would be wrong.
     rxcpp::observable<>::interval(std::chrono::milliseconds(interval_ms))
-        .flat_map([pv, &ctx](long) { return rxepics::read_pv<double>(pv, ctx); })
+        .concat_map([pv, &ctx](long) { return rxepics::read_pv<double>(pv, ctx); })
         .take(N)
         .to_vector()
         .subscribe(
