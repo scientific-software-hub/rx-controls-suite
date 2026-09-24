@@ -22,8 +22,9 @@ import time
 import weakref
 from pathlib import Path
 
+import numpy as np
 import pytest
-from caproto import CaprotoError
+from caproto import AlarmSeverity, CaprotoError
 from reactivex.scheduler.eventloop import AsyncIOScheduler
 
 
@@ -42,12 +43,23 @@ class FakeStatus:
         return self.name
 
 
-class FakeResponse:
-    """Mimics caproto's EventAddResponse: only .data and .status are used."""
+class FakeMetadata:
+    """Mimics a caproto DBR_TIME_* struct: only .timestamp and .severity
+    (the fields read_pv_ts/monitor_pv_ts pull off .metadata) are modeled."""
 
-    def __init__(self, data, status: FakeStatus | None = None):
+    def __init__(self, timestamp: float = 1_700_000_000.0, severity=AlarmSeverity.NO_ALARM):
+        self.timestamp = timestamp
+        self.severity = severity
+
+
+class FakeResponse:
+    """Mimics caproto's EventAddResponse: .data, .status, and (for a
+    time-bearing request) .metadata are used."""
+
+    def __init__(self, data, status: FakeStatus | None = None, metadata: FakeMetadata | None = None):
         self.data = data
         self.status = status or FakeStatus()
+        self.metadata = metadata or FakeMetadata()
 
 
 # ---------------------------------------------------------------------------
@@ -128,15 +140,19 @@ class FakeSubscription:
 # ---------------------------------------------------------------------------
 
 class FakePV:
-    def __init__(self, name: str):
+    def __init__(self, name: str, read_value: float = 0.0):
         self.name = name
         self.connection_state_callback = FakeCallbackHandler()
         self._sub: FakeSubscription | None = None
+        self.read_value = read_value
 
     def subscribe(self, **kwargs) -> FakeSubscription:
         if self._sub is None:
             self._sub = FakeSubscription()
         return self._sub
+
+    async def read(self, *, data_type=None, **kwargs) -> FakeResponse:
+        return FakeResponse(np.array([self.read_value]))
 
 
 class FakeContext:
