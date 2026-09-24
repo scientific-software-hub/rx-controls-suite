@@ -41,8 +41,10 @@ public class TangoTestCorrelate {
         System.out.printf("%-14s  %-14s  %s%n", "double_scalar", "long_scalar", "difference");
         System.out.println("-".repeat(50));
 
+        // concatMapSingle (not flatMapSingle): each tick's pair is
+        // serialized, so printed lines stay in tick order under load.
         Flowable.interval(intervalMs, TimeUnit.MILLISECONDS)
-                .flatMapSingle(tick -> Single.zip(
+                .concatMapSingle(tick -> Single.zip(
                         // issued in parallel — both reads happen on the same tick
                         Flowable.fromPublisher(new RxTangoAttribute<>(device, "double_scalar"))
                                 .firstOrError()

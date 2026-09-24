@@ -23,7 +23,13 @@ public class CorrelatedOrbitSnapshot {
         System.out.println("time(s)  beam(mA)  lifetime(h)  orbit(um)  vacuum(nbar)  dose(mSv/h)");
         System.out.println("-------  --------  -----------  ---------  ------------  -----------");
 
+        // onBackpressureLatest() + concatMapSingle (RxJava 3 has no
+        // exhaustMap): a pure terminal-display snapshot, standalone (not
+        // shared with any consumer that gates on a transition) — only the
+        // freshest snapshot matters, so a slow tick drops the backlog
+        // rather than falling behind.
         Flowable.interval(0, intervalMs, TimeUnit.MILLISECONDS)
+                .onBackpressureLatest()
                 .concatMapSingle(tick -> Single.zip(
                         RingDevices.readController(controller),
                         RingDevices.readSector(sector),

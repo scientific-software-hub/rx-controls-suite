@@ -36,8 +36,13 @@ public class PollProperty {
 
         AtomicLong tick = new AtomicLong(0);
 
+        // onBackpressureLatest() + concatMapSingle (RxJava 3 has no
+        // exhaustMap): a pure display poll — only the freshest value
+        // matters, so a slow read drops the backlog rather than piling up
+        // or reordering.
         Flowable.interval(intervalMs, TimeUnit.MILLISECONDS)
-                .flatMapSingle(__ ->
+                .onBackpressureLatest()
+                .concatMapSingle(__ ->
                         Flowable.fromPublisher(RxTineRead.ofDouble(device, property))
                                 .firstOrError()
                 )

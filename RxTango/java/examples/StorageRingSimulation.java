@@ -398,9 +398,14 @@ public class StorageRingSimulation {
     private static void startControlSystem() throws Exception {
         String device = CONTROL_SYSTEM;
 
-        // Reactive control logic
+        // Reactive control logic. concatMapSingle (not flatMapSingle): each
+        // tick reads sensors, computes a control action, and *writes* it —
+        // a coalescing poll dropping a tick would skip a control decision
+        // outright, not just show a stale display value. (Observable has
+        // no backpressure protocol, so no onBackpressureLatest() either
+        // way — Flowable-only.)
         Disposable subscription = Observable.interval(1, TimeUnit.SECONDS)
-                .flatMapSingle(tick -> {
+                .concatMapSingle(tick -> {
                     try {
                         // Read all BPMs
                         List<Double> bpmReadings = readAllBPMs();

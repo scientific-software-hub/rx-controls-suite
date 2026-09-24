@@ -183,9 +183,13 @@ public class BeamLossScenario {
                 err -> System.err.println("VAC1 ERROR: " + err.getMessage())
         );
 
-        // Subscribe to control system
+        // Subscribe to control system. concatMapSingle (not flatMapSingle):
+        // this demo's whole point is alarm propagation on a state
+        // transition — a coalescing poll could drop the one tick that
+        // caught it. (Observable has no backpressure protocol, so there is
+        // no onBackpressureLatest() here regardless — Flowable-only.)
         Disposable controlSubscription = Observable.interval(1, TimeUnit.SECONDS)
-                .flatMapSingle(tick -> {
+                .concatMapSingle(tick -> {
                     try {
                         String state = (String) TangoProxies.newDeviceProxyWrapper(CONTROL_DEVICE)
                                 .read_attribute("ControlState").get();

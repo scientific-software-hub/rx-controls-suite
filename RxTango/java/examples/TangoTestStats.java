@@ -41,9 +41,12 @@ public class TangoTestStats {
 
         AtomicInteger counter = new AtomicInteger(0);
 
+        // concatMapSingle (not flatMapSingle): a fixed-N sample must not
+        // drop or reorder a reading, or the final N-sample stats would be
+        // wrong.
         List<Double> samples = Flowable.interval(intervalMs, TimeUnit.MILLISECONDS)
                 .take(n)
-                .flatMapSingle(tick ->
+                .concatMapSingle(tick ->
                         Flowable.fromPublisher(new RxTangoAttribute<>(device, "double_scalar"))
                                 .firstOrError()
                                 .map(v -> ((Number) v).doubleValue())

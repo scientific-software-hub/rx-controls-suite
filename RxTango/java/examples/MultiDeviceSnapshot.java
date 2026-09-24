@@ -82,10 +82,14 @@ public class MultiDeviceSnapshot {
                     err   -> System.err.println("Fatal: " + err.getMessage())
             );
         } else {
-            // continuous
+            // continuous. onBackpressureLatest() + concatMapSingle (RxJava 3
+            // has no exhaustMap): a display-class poll — only the freshest
+            // snapshot matters. The inner fan-out inside `snapshot` stays
+            // flatMapSingle — concurrency there is the point.
             System.out.printf("Polling every %d ms — Ctrl+C to stop%n", intervalMs);
             Flowable.interval(0, intervalMs, TimeUnit.MILLISECONDS)
-                    .flatMapSingle(tick -> snapshot)
+                    .onBackpressureLatest()
+                    .concatMapSingle(tick -> snapshot)
                     .blockingSubscribe(
                             lines -> { System.out.println("\nSnapshot @ " + Instant.now()); lines.forEach(System.out::println); },
                             err   -> System.err.println("Fatal: " + err.getMessage())

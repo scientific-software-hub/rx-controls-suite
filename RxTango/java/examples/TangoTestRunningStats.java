@@ -76,8 +76,10 @@ public class TangoTestRunningStats {
         System.out.println("  " + "-".repeat(82));
 
         Flowable.interval(intervalMs, TimeUnit.MILLISECONDS)
-                // read one sample per tick
-                .flatMapSingle(tick ->
+                // read one sample per tick. concatMapSingle (not
+                // flatMapSingle): running stats must not lose a sample —
+                // dropping one under load would skew the mean/stddev.
+                .concatMapSingle(tick ->
                         Flowable.fromPublisher(new RxTangoAttribute<>(device, "double_scalar"))
                                 .firstOrError()
                                 .map(v -> ((Number) v).doubleValue())

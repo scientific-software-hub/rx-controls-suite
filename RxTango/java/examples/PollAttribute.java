@@ -36,8 +36,13 @@ public class PollAttribute {
 
         System.out.printf("Polling %s/%s every %d ms — Ctrl+C to stop%n", device, attribute, intervalMs);
 
+        // onBackpressureLatest() + concatMapSingle (RxJava 3 has no
+        // exhaustMap): a pure display poll — only the freshest value
+        // matters, so a slow read drops the backlog rather than piling up
+        // or reordering.
         Flowable.interval(intervalMs, TimeUnit.MILLISECONDS)
-                .flatMapSingle(tick ->
+                .onBackpressureLatest()
+                .concatMapSingle(tick ->
                         Flowable.fromPublisher(new RxTangoAttribute<>(device, attribute))
                                 .firstOrError()
                 )

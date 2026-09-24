@@ -49,8 +49,10 @@ public class ZipAttributes {
         System.out.printf("Zipping %s/%s + %s/%s every %d ms — Ctrl+C to stop%n",
                 device1, attr1, device2, attr2, intervalMs);
 
+        // concatMapSingle (not flatMapSingle): each tick's pair is
+        // serialized, so printed lines stay in tick order under load.
         Flowable.interval(intervalMs, TimeUnit.MILLISECONDS)
-                .flatMapSingle(tick -> Single.zip(
+                .concatMapSingle(tick -> Single.zip(
                         Flowable.fromPublisher(new RxTangoAttribute<>(device1, attr1)).firstOrError(),
                         Flowable.fromPublisher(new RxTangoAttribute<>(device2, attr2)).firstOrError(),
                         (v1, v2) -> String.format("[%d] %s=%s  |  %s=%s",

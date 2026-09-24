@@ -47,8 +47,11 @@ public class TangoTestThrottle {
                 pollMs, displayMs, (1.0 - (double) pollMs / displayMs) * 100);
 
         Flowable.interval(pollMs, TimeUnit.MILLISECONDS)
-                // read on every tick at full poll rate
-                .flatMapSingle(tick ->
+                // read on every tick at full poll rate — concatMapSingle
+                // (not flatMapSingle) so ticks serialize in order with no
+                // pileup under latency; throttleLast() below does the
+                // coalescing, which is this demo's whole point.
+                .concatMapSingle(tick ->
                         Flowable.fromPublisher(new RxTangoAttribute<>(device, "double_scalar"))
                                 .firstOrError()
                                 .map(v -> ((Number) v).doubleValue())

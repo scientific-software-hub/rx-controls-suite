@@ -117,12 +117,17 @@ public class TangoTestRetry {
         System.out.printf("  %5s  %12s%n", "tick", GOOD_ATTR);
         System.out.println("  " + "-".repeat(20));
 
+        // concatMapSingle (not flatMapSingle) on the outer flatten: a
+        // tick's retries must finish before the next tick's read starts,
+        // or overlapping retries could race two reads against the same
+        // attribute. This is orthogonal to the retry(n) placement note
+        // below, which is about restarting the tick counter, not ordering.
         Flowable.interval(pollMs, TimeUnit.MILLISECONDS)
-                .flatMapSingle(tick ->
+                .concatMapSingle(tick ->
                         readAttr(device, GOOD_ATTR)
-                                // retry(n) is INSIDE flatMapSingle → each tick is independently
-                                // resilient.  A failing tick emits NaN; the next tick fires
-                                // on schedule regardless.
+                                // retry(n) is INSIDE concatMapSingle → each tick is
+                                // independently resilient.  A failing tick emits NaN;
+                                // the next tick fires on schedule regardless.
                                 //
                                 // If retry were on the outer Flowable.interval(...).retry(n),
                                 // a single bad tick would restart the counter from tick 0,

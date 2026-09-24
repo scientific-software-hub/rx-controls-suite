@@ -60,10 +60,13 @@ public class AlarmMonitor {
 
         // Build one polling stream per target, then merge them all into a single alarm stream.
         // Each stream is independent: an error on one device doesn't kill the others.
+        // concatMapSingle (not flatMapSingle): an alarm edge must never be
+        // dropped or reordered — a coalescing poll could skip the one tick
+        // that crossed the threshold.
         List<Flowable<String>> streams = new ArrayList<>();
         for (Target t : targets) {
             Flowable<String> stream = Flowable.interval(intervalMs, TimeUnit.MILLISECONDS)
-                    .flatMapSingle(tick ->
+                    .concatMapSingle(tick ->
                             Flowable.fromPublisher(new RxTangoAttribute<>(t.device(), t.attribute()))
                                     .firstOrError()
                                     .map(v -> ((Number) v).doubleValue())

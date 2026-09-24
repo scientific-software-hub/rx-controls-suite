@@ -48,8 +48,11 @@ public class CalibrationPipeline {
         System.out.println("Ctrl+C to stop");
 
         Flowable.interval(intervalMs, TimeUnit.MILLISECONDS)
-                // Step 1: read
-                .flatMapSingle(__ ->
+                // Step 1: read. concatMapSingle (not flatMapSingle): a
+                // write must not race the next tick's write — since the
+                // read already serializes, only one value flows through
+                // the rest of this pipeline at a time.
+                .concatMapSingle(__ ->
                         Flowable.fromPublisher(RxTineRead.ofDouble(srcDevice, srcProp))
                                 .firstOrError()
                 )

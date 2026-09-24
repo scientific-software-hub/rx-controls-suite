@@ -24,7 +24,13 @@ public class StorageRingDashboard {
         System.out.printf("Storage ring dashboard%ncontroller=%s%nsectors=%d%n%n",
                 controller, sectors.size());
 
+        // onBackpressureLatest() + concatMapSingle (RxJava 3 has no
+        // exhaustMap): a pure terminal-display dashboard, standalone (not
+        // shared with any consumer that gates on a transition) — only the
+        // freshest snapshot matters, so a slow tick drops the backlog
+        // rather than falling behind.
         Flowable.interval(0, intervalMs, TimeUnit.MILLISECONDS)
+                .onBackpressureLatest()
                 .concatMapSingle(tick -> Single.zip(
                         RingDevices.readController(controller),
                         RingDevices.readAllSectors(sectors),

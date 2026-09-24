@@ -51,8 +51,10 @@ public class TangoTestSlidingAverage {
         System.out.println("  " + "-".repeat(62));
 
         Flowable.interval(intervalMs, TimeUnit.MILLISECONDS)
-                // one read per tick
-                .flatMapSingle(tick ->
+                // one read per tick. concatMapSingle (not flatMapSingle):
+                // a sliding window must not lose a sample — a dropped
+                // tick would corrupt the window.
+                .concatMapSingle(tick ->
                         Flowable.fromPublisher(new RxTangoAttribute<>(device, "double_scalar"))
                                 .firstOrError()
                                 .map(v -> ((Number) v).doubleValue())

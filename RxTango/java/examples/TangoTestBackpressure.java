@@ -75,6 +75,10 @@ public class TangoTestBackpressure {
         AtomicLong consumed  = new AtomicLong(0);
 
         // --- fast producer: read Tango attribute at poll rate ---
+        // REVIEW: kept as flatMapSingle — this demo exists to show what an
+        // unbounded merge does under a fast producer; coalescing here
+        // would delete the exact problem the strategies below are the fix
+        // for.
         Flowable<Double> upstream = Flowable.interval(pollMs, TimeUnit.MILLISECONDS)
                 .flatMapSingle(tick ->
                         Flowable.fromPublisher(new RxTangoAttribute<>(device, "double_scalar"))
