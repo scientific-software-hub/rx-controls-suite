@@ -79,7 +79,9 @@ read_pv("TEST:DOUBLE", ctx).subscribe(
 **From "read once" to "read forever" — without a loop.**
 
 `rx.interval()` ticks every N ms and triggers a fresh read.
-`flat_map` turns each tick into an async one-shot read.
+`map` + `exclusive()` turns each tick into an async one-shot read, dropping any
+tick that arrives while a read is still in flight — the right choice for a
+display poll, where only the freshest value matters.
 The stream runs until Ctrl+C.
 
 ```shell
@@ -89,9 +91,12 @@ python poll_pv.py TEST:CALC 500
 Key code:
 ```python
 # interval() emits 0, 1, 2 ... every 500 ms
-# flat_map fires one read per tick — no loop, no thread management
+# map + exclusive() (RxPY has no exhaust_map) fires one read per tick,
+# dropping ticks under load instead of piling up or reordering — no loop,
+# no thread management
 rx.interval(timedelta(milliseconds=500), scheduler=scheduler).pipe(
-    ops.flat_map(lambda _: read_pv("TEST:CALC", ctx))
+    ops.map(lambda _: read_pv("TEST:CALC", ctx)),
+    ops.exclusive(),
 ).subscribe(on_next=print)
 ```
 
@@ -149,12 +154,16 @@ rx.from_iterable(pv_names).pipe(
 
 ---
 
-## 5. Zip two PVs
+## 5. Correlate two PVs, with measured skew
 
-**Two PVs read simultaneously on every tick — result always coherent.**
+**Two PVs read on every tick, correlated — with the actual gap between their timestamps reported, not assumed away.**
 
-`rx.zip(obs1, obs2)` issues both reads concurrently and combines their results
-only when BOTH complete — the pair is never half-delivered.
+`correlate_snapshot(obs1, obs2)` (built on `rx.zip`) issues both reads
+concurrently and combines their results only when BOTH complete — the pair is
+never half-delivered, same guarantee as a bare `zip`. What it adds is
+`skew`: the measured difference between the two PVs' own source timestamps,
+since "both completed" says nothing about whether the two values describe
+the same instant.
 
 ```shell
 python zip_pvs.py TEST:DOUBLE TEST:LONG 500
@@ -163,10 +172,10 @@ python zip_pvs.py TEST:DOUBLE TEST:LONG 500
 Key code:
 ```python
 rx.interval(timedelta(milliseconds=500), scheduler=scheduler).pipe(
-    ops.flat_map(lambda _: rx.zip(
-        read_pv("TEST:DOUBLE", ctx),
-        read_pv("TEST:LONG", ctx),
-    ).pipe(ops.map(lambda pair: f"{pair[0]} | {pair[1]}")))
+    ops.concat_map(lambda _: correlate_snapshot(
+        read_pv_ts("TEST:DOUBLE", ctx),
+        read_pv_ts("TEST:LONG", ctx),
+    ).pipe(ops.map(lambda c: f"{c.values[0]} | {c.values[1]}  (skew={c.skew:.4f}s)")))
 )
 ```
 
@@ -187,9 +196,9 @@ Arguments: `<pv_name> [samples=20] [interval-ms=500]`
 
 ---
 
-## 7. Correlated parallel reads
+## 7. Correlated parallel reads, with measured skew
 
-**Two PVs read simultaneously — guaranteed same-tick coherent pair.**
+**Two PVs read in parallel each tick — the difference is printed alongside the measured timestamp skew between them, not a claim that they're "in sync".**
 
 ```shell
 python pv_correlate.py TEST:DOUBLE TEST:LONG 500
@@ -216,7 +225,9 @@ Key code:
 ```python
 streams = [
     rx.interval(interval, scheduler=scheduler).pipe(
-        ops.flat_map(lambda _: read_pv(pv_name, ctx)),
+        # concat_map, not flat_map: an alarm edge must never be dropped or
+        # reordered by a coalescing poll.
+        ops.concat_map(lambda _, n=pv_name: read_pv(n, ctx)),
         ops.filter(lambda v: abs(v) > threshold),
         ops.map(lambda v, n=pv_name: f"ALARM  {n} = {v:.4f}"),
         ops.catch(lambda e, _: rx.empty()),
@@ -232,7 +243,8 @@ rx.merge(*streams).subscribe(on_next=print)
 
 **A continuous read-transform-write loop as a single Rx chain.**
 
-`interval → flat_map(read) → map(calibrate) → flat_map(write)`
+`interval → map(read)+exclusive() → map(calibrate) → concat_map(write)` — the read
+coalesces (display-class), the write serializes (must not race the next tick's write).
 
 ```shell
 python calibration_pipeline.py TEST:CALC TEST:DOUBLE 2.0 10.0 1000
@@ -277,7 +289,10 @@ Arguments: `<pv_name> [poll-ms=50] [display-ms=1000]`
 Key code:
 ```python
 rx.interval(timedelta(milliseconds=poll_ms), scheduler=scheduler).pipe(
-    ops.flat_map(lambda _: read_pv(pv_name, ctx)),
+    # concat_map, not flat_map: every tick issues its own read, in order,
+    # with no pileup — the IOC really does see every request at poll_ms.
+    # sample() below is where the coalescing happens, not the read step.
+    ops.concat_map(lambda _: read_pv(pv_name, ctx)),
     ops.do_action(on_next=count_polled),
     # sample: of all values arriving within each display window,
     # keep only the most recent one and discard the rest.
@@ -303,7 +318,9 @@ Arguments: `<pv_name> [window=5] [interval-ms=400]` — output starts after the 
 Key code:
 ```python
 rx.interval(timedelta(milliseconds=interval_ms), scheduler=scheduler).pipe(
-    ops.flat_map(lambda _: read_pv(pv_name, ctx)),
+    # concat_map, not flat_map: a sliding window must never lose a
+    # sample — a dropped tick would corrupt the window.
+    ops.concat_map(lambda _: read_pv(pv_name, ctx)),
     # buffer_with_count(N, 1): sliding window of N values, step 1
     ops.buffer_with_count(window, 1),
     ops.map(lambda buf: (buf[-1], sum(buf) / len(buf))),  # (raw, smoothed)
@@ -332,7 +349,9 @@ Arguments: `<pv_name> [interval-ms=500]`
 Key code:
 ```python
 rx.interval(timedelta(milliseconds=interval_ms), scheduler=scheduler).pipe(
-    ops.flat_map(lambda _: read_pv(pv_name, ctx)),
+    # concat_map, not flat_map: running stats must not lose a sample —
+    # dropping one under load would skew the mean/stddev.
+    ops.concat_map(lambda _: read_pv(pv_name, ctx)),
     # scan() folds each value into the accumulator and emits a new Stats immediately.
     # Unlike reduce(), scan() never waits for the stream to complete.
     ops.scan(Stats.update, Stats.zero()),

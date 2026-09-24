@@ -35,10 +35,12 @@ Single value emitted, Observable completes immediately.  The Python equivalent o
 python examples/poll_attribute.py
 ```
 
-**Key pattern:** `rx.interval(ms).pipe(ops.flat_map(read_attribute(...)))`
+**Key pattern:** `rx.interval(ms).pipe(ops.map(read_attribute(...)), ops.exclusive())`
 
-This is the canonical polling idiom: `interval` ticks; `flat_map` fires a fresh single-shot
-read on every tick.  No `while True`, no `time.sleep`.
+This is the canonical polling idiom: `interval` ticks; `map` + `exclusive()` (RxPY has no
+`exhaust_map`) fires a fresh single-shot read on every tick, dropping any tick that arrives
+while a read is still in flight — the right choice for a display poll, where only the
+freshest value matters.  No `while True`, no `time.sleep`.
 
 ---
 
@@ -60,16 +62,19 @@ thread and are dispatched back to asyncio via `loop.call_soon_threadsafe`.
 
 ## Coordination
 
-### `zip_attributes.py` — Correlated snapshot ★
+### `zip_attributes.py` — Correlated snapshot, with measured skew ★
 
 ```bash
 python examples/zip_attributes.py
 ```
 
-**Key operator:** `rx.zip(read_attribute(a), read_attribute(b))`
+**Key operator:** `correlate_snapshot(read_attribute_ts(a), read_attribute_ts(b))`
 
-Both reads fire **in parallel**.  The pair is emitted only when **both** complete.
-If either fails, the pair is silently dropped — never half-processed.
+Both reads fire **in parallel**.  The pair is emitted only when **both** complete —
+same guarantee as a bare `rx.zip`.  If either fails, the pair is silently dropped —
+never half-processed.  What `correlate_snapshot` adds is `skew`: the measured gap
+between the two attributes' own `DeviceAttribute.time` values, since "both
+complete" says nothing on its own about whether they describe the same instant.
 
 ---
 
@@ -86,16 +91,18 @@ Per-device errors are recovered with `ops.catch` so the snapshot continues.
 
 ---
 
-### `correlate.py` — Continuous correlated reads ★
+### `correlate.py` — Continuous correlated reads, with measured skew ★
 
 ```bash
 python examples/correlate.py
 ```
 
-**Key pattern:** `interval + flat_map(zip(read1, read2))`
+**Key pattern:** `interval + concat_map(correlate_snapshot(read1_ts, read2_ts))`
 
 Every tick: two reads fire in parallel, the pair is emitted only when both arrive.
-Dropped tick if either read fails — guaranteed atomic pairs only.
+Dropped tick if either read fails. `correlate_snapshot` reports the measured skew
+between the two attributes' source timestamps alongside the values — not a claim
+that the pair is "atomic" or "in sync", a number.
 
 ---
 
@@ -182,23 +189,26 @@ the practical strategies: `ops.sample` (drop surplus, keep freshest).
 python examples/retry.py
 ```
 
-**Key operator:** `ops.retry(n)` inside `flat_map`
+**Key operator:** `ops.retry(n)` inside `concat_map`
 
-Up to N immediate retries per poll tick.  The example also sketches the
+Up to N immediate retries per poll tick, serialized so a tick's retries finish
+before the next tick's read starts.  The example also sketches the
 exponential-backoff pattern using `ops.catch` + `rx.timer`.
 
 ---
 
-### `zip_window.py` — Time-windowed synchronisation
+### `zip_window.py` — Windowed pairing, with per-pair measured skew
 
 ```bash
 python examples/zip_window.py
 ```
 
-**Key operators:** `ops.buffer_with_count(N, skip=N)` + `rx.zip`
+**Key operators:** `ops.buffer_with_count(N, skip=N)` + `rx.zip`, then per-index `abs(a.ts - b.ts)`
 
-Buffers N samples from two streams, then zips the buffers — producing
-window-synchronised pairs for batch correlation.
+Buffers N timestamped samples from two streams, then zips the buffers and pairs
+them by position within the window — this is a *count-based* pairing, not a
+time-based one, so "window N from each stream" can still be measurably apart;
+each pair's skew is computed and reported, not assumed to be zero.
 
 ---
 

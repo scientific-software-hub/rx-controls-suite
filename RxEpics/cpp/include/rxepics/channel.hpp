@@ -12,6 +12,18 @@
  *
  * PVXS returns a `pvxs::Value` struct; we extract the scalar field "value"
  * as type T — equivalent to caproto's `reading.data[0]`.
+ *
+ * // TODO(ts): RxEpics/python's read_pv_ts()/Reading(value, ts, quality) has
+ * // no mirror here yet. A PVXS NTScalar carries `timeStamp` and `alarm`
+ * // sub-structures alongside "value" on every read (the EPICS pvData
+ * // normative type, not a caproto-specific request flag) — the same
+ * // `pvxs::Value` read_pv() already has in hand below — so a `Reading<T>`
+ * // struct and a `read_pv_ts<T>()` overload should be cheap to add. Not
+ * // implemented here: the exact `val["timeStamp"]["secondsPastEpoch"]`-style
+ * // field path is unverified in this environment (no PVXS installed, no
+ * // cmake toolchain — see RxEpics/cpp/CLAUDE.md); confirm against a live
+ * // PVA read before wiring it up. Documented as a design, not implemented,
+ * // per this pass's C++ scope decision.
  */
 
 #include <exception>

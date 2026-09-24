@@ -25,7 +25,7 @@ cmake --build build
 | # | Example | What it demonstrates | Run |
 |---|---------|---------------------|-----|
 | 1 | `read_pv` | Single-shot `observable<T>` — one value then complete | `./build/examples/read_pv [pv ...]` |
-| 2 | `poll_pv` | Client-side poll: `interval · flat_map` | `./build/examples/poll_pv [pv] [ms]` |
+| 2 | `poll_pv` | Client-side poll: `interval · concat_map` | `./build/examples/poll_pv [pv] [ms]` |
 | 3 | `monitor_pv` ★ | IOC-pushed updates (primary streaming primitive) | `./build/examples/monitor_pv [pv]` |
 
 ### Coordination
@@ -33,8 +33,8 @@ cmake --build build
 | # | Example | What it demonstrates | Run |
 |---|---------|---------------------|-----|
 | 4 | `multi_pv_snapshot` | Parallel N-PV snapshot: `iterate · flat_map · to_vector` | `./build/examples/multi_pv_snapshot [pv1] [pv2]` |
-| 5 | `pv_correlate` | Cross-PV pair with diff column | `./build/examples/pv_correlate [pv1] [pv2]` |
-| 6 | `zip_pvs` | Atomic zip of two PVs | `./build/examples/zip_pvs [pv1] [pv2]` |
+| 5 | `pv_correlate` | Cross-PV pair with diff column, polled: `interval · concat_map` | `./build/examples/pv_correlate [pv1] [pv2]` |
+| 6 | `zip_pvs` | Single-shot zip of two PVs — pair only when both complete, no half-delivery (not a claim of simultaneity: `zip` alone can't tell you how far apart the two reads' source moments were — see `RxEpics/python`'s `correlate_snapshot`; a C++ `Reading`/timestamp mirror is a `// TODO(ts):` in the headers) | `./build/examples/zip_pvs [pv1] [pv2]` |
 | 7 | `alarm_monitor` ★ | Fan-in alarm stream: `merge · filter` | `./build/examples/alarm_monitor [threshold] [pvs...]` |
 
 ### Stream processing

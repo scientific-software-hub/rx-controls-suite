@@ -23,16 +23,16 @@ cmake --build build
 | # | Example | What it demonstrates | Run |
 |---|---------|---------------------|-----|
 | 1 | `read_attribute` | Single-shot `observable<T>` — one value then complete | `./build/examples/read_attribute [dev] [attr]` |
-| 2 | `poll_attribute` | Poll without a loop: `interval · flat_map` | `./build/examples/poll_attribute [dev] [attr] [ms]` |
+| 2 | `poll_attribute` | Poll without a loop: `interval · concat_map` | `./build/examples/poll_attribute [dev] [attr] [ms]` |
 | 3 | `monitor_attribute` | Push observable backed by Tango events | `./build/examples/monitor_attribute [dev] [attr] [event]` |
 
 ### Coordination — multi-source
 
 | # | Example | What it demonstrates | Run |
 |---|---------|---------------------|-----|
-| 4 | `zip_attributes` | Atomic correlated read: `zip(readA, readB)` | `./build/examples/zip_attributes [dev] [a1] [a2]` |
+| 4 | `zip_attributes` | Correlated poll of two attributes: `interval · concat_map(zip(readA, readB))` — pair only when both complete, no half-delivery (not a simultaneity claim; see the `// TODO(ts):` in `attribute.hpp`) | `./build/examples/zip_attributes [dev] [a1] [a2]` |
 | 5 | `multi_device_snapshot` | Parallel N-device snapshot: `iterate · flat_map · to_vector` | `./build/examples/multi_device_snapshot [attr] [dev1] [dev2]` |
-| 6 | `correlate` | Cross-device pair with diff column | `./build/examples/correlate [dev1] [a1] [dev2] [a2]` |
+| 6 | `correlate` | Cross-device pair with diff column, polled: `interval · concat_map` | `./build/examples/correlate [dev1] [a1] [dev2] [a2]` |
 | 7 | `alarm_monitor` ★ | Fan-in alarm stream: `merge · filter` | `./build/examples/alarm_monitor [threshold] [ms] [dev1] [dev2]` |
 
 ### Stream processing — operators on a single stream
@@ -44,8 +44,8 @@ cmake --build build
 | 10 | `running_stats` | Live O(1) stats (Welford): `scan` | `./build/examples/running_stats [dev] [attr]` |
 | 11 | `stats` | Batch stats: `take(N) · to_vector` | `./build/examples/stats [dev] [attr] [N]` |
 | 12 | `backpressure` | Overload strategies: `sample / debounce / buffer` | `./build/examples/backpressure [strategy]` |
-| 13 | `retry` | Transient failure recovery: `retry(N)` inside `flat_map` | `./build/examples/retry [strategy]` |
-| 14 | `zip_window` | Window-synchronized pair stats | `./build/examples/zip_window [dev] [a1] [a2] [N]` |
+| 13 | `retry` | Transient failure recovery: `retry(N)` inside `concat_map` (outer flatten too — a tick's retries must finish before the next tick's read starts) | `./build/examples/retry [strategy]` |
+| 14 | `zip_window` | Windowed pairing by position, not by time — two same-index windows from independent streams can still be measurably apart | `./build/examples/zip_window [dev] [a1] [a2] [N]` |
 
 ### Composition — multi-step pipelines
 

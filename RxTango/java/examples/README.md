@@ -58,8 +58,10 @@ Flowable.fromPublisher(new RxTangoAttribute<>(device, attr))
 **From "read once" to "read forever" — without a loop.**
 
 `Flowable.interval()` ticks every N milliseconds and triggers a fresh read.
-`flatMapSingle` turns each tick into an async single-item read.
-The stream runs until you press Ctrl+C.
+`onBackpressureLatest()` + `concatMapSingle` (RxJava 3 has no `exhaustMap`) turns each
+tick into an async single-item read, dropping the backlog under load instead of piling
+up or reordering — the right choice for a display poll, where only the freshest value
+matters. The stream runs until you press Ctrl+C.
 
 ```shell
 jbang PollAttribute.java \
@@ -69,10 +71,12 @@ jbang PollAttribute.java \
 Key code:
 ```java
 // interval() emits Long(0), Long(1), Long(2) ... every 500 ms
-// flatMapSingle() fires one read per tick and collects its result
+// onBackpressureLatest() + concatMapSingle() fires one read per tick and
+// collects its result, dropping backlog under load
 // No loop. No thread management. No counter.
 Flowable.interval(500, TimeUnit.MILLISECONDS)
-    .flatMapSingle(tick ->
+    .onBackpressureLatest()
+    .concatMapSingle(tick ->
         Flowable.fromPublisher(new RxTangoAttribute<>(device, attr))
                 .firstOrError()
     )
@@ -151,13 +155,14 @@ Arguments: `<device> [samples=20] [interval-ms=500]`
 Key code:
 ```java
 // interval + take(N): emit exactly N ticks, then complete automatically.
-// flatMapSingle: one RxTangoAttribute read per tick.
+// concatMapSingle (not flatMapSingle): a fixed-N sample must not drop or
+// reorder a reading, or the final N-sample stats would be wrong.
 // doOnNext: print each sample as it arrives (live progress).
 // toList: the Rx operator handles list allocation and synchronization.
 // blockingGet: drive the whole chain from main() and return the List<Double>.
 List<Double> samples = Flowable.interval(intervalMs, TimeUnit.MILLISECONDS)
     .take(n)
-    .flatMapSingle(tick ->
+    .concatMapSingle(tick ->
         Flowable.fromPublisher(new RxTangoAttribute<>(device, "double_scalar"))
                 .firstOrError()
                 .map(v -> ((Number) v).doubleValue())
@@ -169,13 +174,17 @@ List<Double> samples = Flowable.interval(intervalMs, TimeUnit.MILLISECONDS)
 
 ---
 
-## 5. Correlated parallel reads
+## 5. Correlated parallel reads, with measured skew
 
-**Two attributes read simultaneously on every tick — guaranteed to be from the same moment.**
+**Two attributes read in parallel on every tick — the measured gap between their own timestamps is reported, not assumed away.**
 
 Sequential reads (`read A; read B`) are vulnerable to a value update between
 the two calls — the pair is torn. `Single.zip()` issues both reads in parallel
-and delivers them together only when both have arrived.
+and delivers them together only when both have arrived — but "both arrived"
+is not "the same moment": each attribute's own `DeviceAttribute` timestamp
+would need comparing to know that, which this example does not yet do in
+Java (see `RxTango/python`'s `correlate_snapshot` for the primitive that
+measures it).
 
 ```shell
 jbang TangoTestCorrelate.java \
@@ -189,8 +198,10 @@ Key code:
 // Single.zip fires both reads in parallel and combines their results.
 // The combiner lambda only runs when BOTH Singles complete successfully.
 // If either read fails, zip propagates the error — the pair is never half-delivered.
+// concatMapSingle (not flatMapSingle): each tick's pair is serialized, so
+// printed lines stay in tick order under load.
 Flowable.interval(intervalMs, TimeUnit.MILLISECONDS)
-    .flatMapSingle(tick -> Single.zip(
+    .concatMapSingle(tick -> Single.zip(
         Flowable.fromPublisher(new RxTangoAttribute<>(device, "double_scalar"))
                 .firstOrError()
                 .map(v -> ((Number) v).doubleValue()),
@@ -225,10 +236,13 @@ Arguments: `<threshold> <interval-ms> <device> <attr> [<device> <attr> ...]`  �
 Key code:
 ```java
 // Build one polling+filtering stream per target.
+// concatMapSingle (not flatMapSingle): an alarm edge must never be
+// dropped or reordered — a coalescing poll could skip the one tick
+// that crossed the threshold.
 List<Flowable<String>> streams = new ArrayList<>();
 for (Target t : targets) {
     Flowable<String> stream = Flowable.interval(intervalMs, TimeUnit.MILLISECONDS)
-        .flatMapSingle(tick ->
+        .concatMapSingle(tick ->
             Flowable.fromPublisher(new RxTangoAttribute<>(t.device(), t.attribute()))
                     .firstOrError()
                     .map(v -> ((Number) v).doubleValue())
@@ -254,9 +268,12 @@ Flowable.merge(streams).blockingSubscribe(System.out::println, ...);
 
 **A continuous read-transform-write loop expressed as a single Rx chain.**
 
-`interval → flatMapSingle(read) → map(transform) → flatMapSingle(write)`.
+`interval → concatMapSingle(read) → map(transform) → flatMapSingle(write)`.
 No loop. No temporary variable. No try/catch around the write.
-If the read or write fails, the error propagates naturally.
+If the read or write fails, the error propagates naturally. The read step uses
+`concatMapSingle`, not `flatMapSingle`: a write must not race the next tick's
+write, and since the read already serializes, only one value flows through
+the rest of this pipeline at a time.
 
 ```shell
 jbang CalibrationPipeline.java \
@@ -270,8 +287,8 @@ Arguments: `<src-device> <src-attr> <dst-device> <dst-attr> <gain> <offset> [int
 Key code:
 ```java
 Flowable.interval(intervalMs, TimeUnit.MILLISECONDS)
-    // Step 1: read source attribute
-    .flatMapSingle(tick ->
+    // Step 1: read source attribute. concatMapSingle (not flatMapSingle).
+    .concatMapSingle(tick ->
         Flowable.fromPublisher(new RxTangoAttribute<>(srcDevice, srcAttr))
                 .firstOrError()
                 .map(raw -> ((Number) raw).doubleValue())
@@ -373,8 +390,11 @@ Arguments: `<device> [poll-ms=50] [display-ms=1000]`  — Ctrl+C to stop.
 Key code:
 ```java
 Flowable.interval(pollMs, TimeUnit.MILLISECONDS)
-    // read at full poll rate — device sees every request
-    .flatMapSingle(tick ->
+    // read at full poll rate — device sees every request. concatMapSingle
+    // (not flatMapSingle): serializes so every tick truly issues its own
+    // read in order, with no pileup under latency; the coalescing happens
+    // downstream via throttleLast(), which is this demo's whole point.
+    .concatMapSingle(tick ->
         Flowable.fromPublisher(new RxTangoAttribute<>(device, "double_scalar"))
                 .firstOrError()
                 .map(v -> ((Number) v).doubleValue())
@@ -413,7 +433,9 @@ Arguments: `<device> [window=5] [interval-ms=400]`  — output starts after the 
 Key code:
 ```java
 Flowable.interval(intervalMs, TimeUnit.MILLISECONDS)
-    .flatMapSingle(tick ->
+    // concatMapSingle (not flatMapSingle): a sliding window must not
+    // lose a sample — a dropped tick would corrupt the window.
+    .concatMapSingle(tick ->
         Flowable.fromPublisher(new RxTangoAttribute<>(device, "double_scalar"))
                 .firstOrError()
                 .map(v -> ((Number) v).doubleValue())
@@ -478,7 +500,9 @@ record Stats(long n, double latest, double min, double max, double mean, double 
 }
 
 Flowable.interval(intervalMs, TimeUnit.MILLISECONDS)
-    .flatMapSingle(tick ->
+    // concatMapSingle (not flatMapSingle): running stats must not lose a
+    // sample — dropping one under load would skew the mean/stddev.
+    .concatMapSingle(tick ->
         Flowable.fromPublisher(new RxTangoAttribute<>(device, "double_scalar"))
                 .firstOrError().map(v -> ((Number) v).doubleValue())
     )
@@ -534,6 +558,9 @@ jbang TangoTestBackpressure.java \
 Key code:
 ```java
 // Fast upstream: read Tango at 100 ms poll rate.
+// REVIEW: kept as flatMapSingle — this demo exists to show what an
+// unbounded merge does under a fast producer; coalescing here would
+// delete the exact problem the strategies below are the fix for.
 Flowable<Double> upstream = Flowable.interval(pollMs, TimeUnit.MILLISECONDS)
     .flatMapSingle(tick ->
         Flowable.fromPublisher(new RxTangoAttribute<>(device, "double_scalar"))
@@ -629,14 +656,18 @@ When `attempt > maxRetries` we return `Flowable.error()` — propagating the
 original exception downstream. Otherwise we return a timer that delays the
 next re-subscription.
 
-### Pattern 3 — retry *inside* `flatMapSingle` (the production pattern)
+### Pattern 3 — retry *inside* `concatMapSingle` (the production pattern)
 
 **The most important pattern.** In a polling loop, retry must go inside
-`flatMapSingle` — not on the outer `interval` stream.
+`concatMapSingle` — not on the outer `interval` stream. `concatMapSingle`, not
+`flatMapSingle`, on the *outer* flatten too: a tick's retries must finish
+before the next tick's read starts, or overlapping retries could race two
+reads against the same attribute. That's orthogonal to the retry-placement
+point below, which is about restarting the tick counter, not ordering.
 
 ```java
 Flowable.interval(pollMs, TimeUnit.MILLISECONDS)
-    .flatMapSingle(tick ->
+    .concatMapSingle(tick ->
         readAttr(device, attr)
             .retry(2)                       // ← INSIDE: each tick retries independently
             .onErrorReturnItem(Double.NaN)  // failed tick → NaN; stream never stops
@@ -649,7 +680,7 @@ Flowable.interval(pollMs, TimeUnit.MILLISECONDS)
 
 If `retry` were on the **outer** stream (`interval(...).retry(n)`), a single
 bad tick would restart the counter from tick 0, resetting the polling cadence
-and losing all accumulated state. Inside `flatMapSingle`, each tick is an
+and losing all accumulated state. Inside `concatMapSingle`, each tick is an
 independent unit — a failed tick emits NaN and the next tick fires on schedule.
 
 ```shell

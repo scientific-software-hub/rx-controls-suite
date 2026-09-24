@@ -9,6 +9,15 @@
  *   on_next(value) → on_completed()    on success
  *   on_error(e)                         on any Tango exception
  *   Exactly one on_next — single-shot.
+ *
+ * // TODO(ts): RxTango/python's read_attribute_ts()/Reading(value, ts, quality)
+ * // has no mirror here yet. Tango::DeviceAttribute::get_date() (a Tango::TimeVal)
+ * // and ::get_quality() (a Tango::AttrQuality) are standard cppTango accessors —
+ * // the same DeviceAttribute this function already reads below — so a
+ * // Reading<T> struct and a read_attribute_ts<T>() overload should be cheap to
+ * // add. Not implemented here or compiled against a live cppTango in this
+ * // pass (no cmake/cppTango toolchain in this environment — see
+ * // RxTango/cpp/CLAUDE.md); documented as a design, not implemented.
  */
 
 #include <exception>
