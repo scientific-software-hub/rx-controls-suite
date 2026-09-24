@@ -64,7 +64,7 @@ def test_monitor_survives_garbage_collection(fake_ctx):
     that Disposable's AutoDetachObserver chain, it would form a reference
     cycle back through the closure's own captured ``observer``, and this
     gc.collect() would reap it — reproducing the original bug one level
-    removed. See the _KEEPALIVE note in monitor.py.
+    removed. See the pinning note in _ca_source.py.
     """
     results = []
 
@@ -83,10 +83,14 @@ def test_monitor_survives_garbage_collection(fake_ctx):
     assert results == [3.0]
 
 
-def test_monitor_dispose_awaits_clear_without_warning(fake_ctx):
-    """Regression test: Subscription.clear() is a coroutine in the asyncio
-    client; dropping it without awaiting produced a RuntimeWarning and never
-    tore down the CA subscription."""
+def test_monitor_dispose_awaits_remove_callback_without_warning(fake_ctx):
+    """Regression test: Subscription.remove_callback() is a coroutine in the
+    asyncio client; dropping it without awaiting produced a RuntimeWarning
+    and never actually removed the callback.
+
+    Also the fix for the sibling regression: dispose() must remove only its
+    own callback, not clear() the whole shared Subscription — see
+    test_monitor_dispose_does_not_kill_sibling_monitor_errors below."""
     async def run():
         loop = asyncio.get_running_loop()
         scheduler = AsyncIOScheduler(loop)
@@ -95,8 +99,9 @@ def test_monitor_dispose_awaits_clear_without_warning(fake_ctx):
         with warnings.catch_warnings():
             warnings.simplefilter("error", RuntimeWarning)
             d.dispose()
-            await asyncio.sleep(0.05)  # let the scheduled clear() coroutine run
-        assert fake_ctx.pvs["X"]._sub.cleared
+            await asyncio.sleep(0.05)  # let the scheduled remove_callback() coroutine run
+        assert fake_ctx.pvs["X"]._sub.live_callback_count == 0
+        assert not fake_ctx.pvs["X"]._sub.cleared  # remove_callback, never clear()
 
     _run(run())
 

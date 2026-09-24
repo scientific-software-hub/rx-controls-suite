@@ -31,7 +31,15 @@ def _monitor_updates(pv_name: str, ctx: Context, handler) -> rx.Observable:
         get_registration=lambda pv: pv.subscribe(),
         make_callback=simple_callback(handler),
         add_callback=lambda registration, callback: registration.add_callback(callback),
-        teardown=lambda registration, token: asyncio.ensure_future(registration.clear()),
+        # remove_callback(token), not clear(): clear() tears down every
+        # callback on the Subscription, including a co-subscribed
+        # monitor_errors on the same PV (they share one CA subscription —
+        # see the docstring above). remove_callback is a coroutine on the
+        # asyncio client, same as clear() was, and caproto auto-unsubscribes
+        # once the last callback is removed.
+        teardown=lambda registration, token: asyncio.ensure_future(
+            registration.remove_callback(token)
+        ),
     )
 
 

@@ -95,7 +95,10 @@ class FakeSubscription:
         self._callbacks[cb_id] = weakref.ref(func)
         return cb_id
 
-    def remove_callback(self, token: int) -> None:
+    async def remove_callback(self, token: int) -> None:
+        # A coroutine on caproto's real asyncio client (unlike the
+        # threading/sync clients) — dropping it without awaiting produces
+        # a RuntimeWarning and never actually removes the callback.
         self._callbacks.pop(token, None)
 
     async def clear(self) -> None:

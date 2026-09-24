@@ -15,11 +15,22 @@ captured ``observer``, and every example in this library discards the
 Disposable ``.subscribe()`` returns (they run until Ctrl+C) — so once
 nothing external holds that cycle, a ``gc.collect()`` pass reaps it and the
 weakref-backed callback dies with it, silently dropping the subscription.
-``_KEEPALIVE`` pins the callback by identity until ``dispose()`` explicitly
-unpins it, independent of what the Rx observer graph does.
 
-This module only extracts the duplicated plumbing that used to live
-separately in ``monitor.py`` and ``connection.py`` — no behavior change.
+The callback is pinned *on the registration object itself* — a caproto
+``Subscription`` or ``CallbackHandler`` is a plain object with no
+``__slots__``, so an attribute is attachable — keyed by the token
+``add_callback`` returns, rather than in a process-global set. The
+registration object is itself rooted for as long as its PV is: caproto
+caches one ``Subscription`` per ``(PV, params)`` in ``PV.subscriptions``
+and never evicts it even after its last callback is removed, and
+``connection_state_callback`` is a fixed attribute created once in
+``PV.__init__``. So repeated create/dispose cycles against the *same* PV
+reuse the *same* registration object and the *same* pin dict — add on
+subscribe, discard on dispose, never growing across cycles. Disposal is
+no longer required for correctness (an un-disposed subscription's
+callback stays reachable through the registration object it belongs to,
+not through the Rx graph), and the pinning can never grow unboundedly the
+way the earlier process-global set did.
 """
 
 import asyncio
@@ -28,7 +39,14 @@ import reactivex as rx
 from caproto import CaprotoError
 from caproto.asyncio.client import Context
 
-_KEEPALIVE: set = set()
+
+def _pins(registration) -> dict:
+    """Return (creating if absent) the pin dict attached to *registration*."""
+    try:
+        return registration._rx_pins
+    except AttributeError:
+        registration._rx_pins = {}
+        return registration._rx_pins
 
 
 def ca_push_source(
@@ -50,8 +68,11 @@ def ca_push_source(
     ``func(sub, response)`` or ``func(pv, state)``); see
     :func:`simple_callback` for the common case.
     *add_callback(registration, callback)* registers *callback* and
-    returns the token ``remove_callback``/``clear`` would need.
-    *teardown(registration, token)* unregisters on dispose.
+    returns a token.
+    *teardown(registration, token)* unregisters exactly that one callback
+    — never every callback on the registration, so a sibling observable
+    sharing it (e.g. ``monitor_pv`` and ``monitor_errors`` on the same PV,
+    sharing one ``Subscription``) is unaffected.
     *initial(observer)*, if given, runs synchronously before the PV is
     even located (``connection_status``'s synthetic ``on_next(False)``,
     so the observable stays total instead of silent until first connect).
@@ -63,11 +84,10 @@ def ca_push_source(
 
         registration = None
         token = None
-        callback = None
         disposed = False
 
         async def _start():
-            nonlocal registration, token, callback
+            nonlocal registration, token
             try:
                 (pv,) = await ctx.get_pvs(pv_name)
                 if disposed:
@@ -75,7 +95,16 @@ def ca_push_source(
                 registration = get_registration(pv)
                 callback = make_callback(observer)
                 token = add_callback(registration, callback)
-                _KEEPALIVE.add(callback)
+                if disposed:
+                    # dispose() raced in between the guard above and
+                    # add_callback actually registering — unregister
+                    # immediately rather than leak a live callback that
+                    # nothing will ever call dispose() on again.
+                    teardown(registration, token)
+                    registration = None
+                    token = None
+                    return
+                _pins(registration)[token] = callback
             except CaprotoError as exc:
                 observer.on_error(exc)
 
@@ -84,8 +113,8 @@ def ca_push_source(
         def dispose():
             nonlocal disposed
             disposed = True
-            _KEEPALIVE.discard(callback)
-            if registration is not None:
+            if registration is not None and token is not None:
+                _pins(registration).pop(token, None)
                 teardown(registration, token)
 
         return dispose
