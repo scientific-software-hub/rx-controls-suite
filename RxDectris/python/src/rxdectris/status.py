@@ -40,13 +40,21 @@ def monitor_state(ctx: DetectorContext, poll_ms: int = 500, scheduler=None) -> r
     """Poll ``status/state`` and emit a :class:`DetectorState` on every change.
 
     SIMPLON has no push notification for detector state, so this is built
-    from the same ``interval -> flat_map(read) -> distinct_until_changed``
+    from the same ``interval -> concat_map(read) -> distinct_until_changed``
     idiom as ``demo/synchrotron-beamline/facility.py::ring_health`` — it just
     polls one parameter instead of zipping several. Never completes; the
     subscription's disposal stops the polling.
+
+    Uses ``concat_map``, not ``flat_map`` or an exhaust-style coalesce: this
+    feeds ``distinct_until_changed``, so a *state transition* must never be
+    dropped — a coalescing poll could skip the one tick that caught the
+    intermediate state. concat_map still cannot see a transition that
+    happens and reverts entirely between two polls (a sub-``poll_ms``
+    transient); only a push notification would close that gap, and SIMPLON
+    doesn't offer one for detector state.
     """
     return rx.interval(timedelta(milliseconds=poll_ms), scheduler=scheduler).pipe(
-        ops.flat_map(lambda _: read_status("state", ctx)),
+        ops.concat_map(lambda _: read_status("state", ctx)),
         ops.map(DetectorState),
         ops.distinct_until_changed(),
     )
