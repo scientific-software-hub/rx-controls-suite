@@ -167,3 +167,26 @@ def test_setup_failure_reaches_on_error(fake_ctx):
 
     _run(run())
     assert len(errors) == 1
+
+
+def test_pin_registry_bounded_across_create_dispose_cycles(fake_ctx):
+    """Regression test for silent-growth: pinning must live on the CA
+    Subscription itself, not a process-global set, so N create/dispose
+    cycles against the same PV leave the pin dict back at its baseline
+    size instead of growing without bound (the failure mode of a
+    never-emptied module-global _KEEPALIVE set)."""
+    async def run():
+        loop = asyncio.get_running_loop()
+        scheduler = AsyncIOScheduler(loop)
+        for _ in range(1000):
+            d = monitor_pv("X", fake_ctx).subscribe(on_next=lambda v: None, scheduler=scheduler)
+            await asyncio.sleep(0)
+            d.dispose()
+            await asyncio.sleep(0)
+
+    _run(run())
+    gc.collect()
+    pv = fake_ctx.pvs["X"]
+    pins = getattr(pv._sub, "_rx_pins", {})
+    assert pins == {}, f"pin registry grew unboundedly: {len(pins)} entries left"
+    assert pv._sub.live_callback_count == 0

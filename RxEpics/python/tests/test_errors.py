@@ -102,3 +102,32 @@ def test_monitor_pv_and_monitor_errors_share_one_subscription(fake_ctx):
     # both subscribe() calls resolved to the same FakePV -> same FakeSubscription
     assert len(fake_ctx.pvs) == 1
     assert fake_ctx.pvs["X"]._sub.live_callback_count == 2
+
+
+def test_monitor_pv_dispose_does_not_kill_sibling_monitor_errors(fake_ctx):
+    """Regression test for the clear()-tears-down-everything bug: disposing
+    monitor_pv must not silence a co-subscribed monitor_errors on the same
+    PV, since they share one CA Subscription (see the test above). Before
+    the fix, dispose() called registration.clear() — which removes every
+    callback on the shared Subscription, not just its own."""
+    values, errors = [], []
+
+    async def run():
+        loop = asyncio.get_running_loop()
+        scheduler = AsyncIOScheduler(loop)
+        from rxepics.monitor import monitor_pv
+        d_pv = monitor_pv("X", fake_ctx).subscribe(on_next=values.append, scheduler=scheduler)
+        monitor_errors("X", fake_ctx).subscribe(on_next=errors.append, scheduler=scheduler)
+        await asyncio.sleep(0.05)
+
+        d_pv.dispose()
+        await asyncio.sleep(0.05)
+
+        pv = fake_ctx.pvs["X"]
+        assert pv._sub.live_callback_count == 1  # only monitor_errors' callback remains
+        pv._sub.fire(FakeResponse(np.array(["still bad"])))
+        await asyncio.sleep(0.05)
+
+    _run(run())
+    assert values == []  # monitor_pv is disposed, sees nothing
+    assert len(errors) == 1  # monitor_errors is still live
