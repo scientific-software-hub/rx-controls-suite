@@ -47,8 +47,10 @@ async def main() -> None:
     print(f"  {'n':>6}  {'value':>14}  {'mean':>14}  {'std':>14}")
     print("  " + "-" * 56)
 
+    # concat_map (not flat_map/exhaust): running stats must not lose a
+    # sample — dropping one under load would skew the mean/stddev.
     rx.interval(timedelta(milliseconds=interval_ms), scheduler=scheduler).pipe(
-        ops.flat_map(lambda _: read_attribute(device, "double_scalar")),
+        ops.concat_map(lambda _: read_attribute(device, "double_scalar")),
         ops.scan(welford_update, seed=(0, 0.0, 0.0)),
     ).subscribe(
         on_next=lambda s: print(

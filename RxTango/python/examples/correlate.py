@@ -37,8 +37,10 @@ async def main() -> None:
     print(f"  {'double_scalar':>16}  {'long_scalar':>14}  {'diff':>14}")
     print("  " + "-" * 50)
 
+    # concat_map (not flat_map): each tick's pair is serialized, so printed
+    # lines stay in tick order under load.
     rx.interval(timedelta(milliseconds=interval_ms), scheduler=scheduler).pipe(
-        ops.flat_map(
+        ops.concat_map(
             lambda _: rx.zip(
                 read_attribute(device, "double_scalar"),
                 read_attribute(device, "long_scalar"),

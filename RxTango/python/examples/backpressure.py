@@ -45,6 +45,9 @@ async def main() -> None:
     consumed = 0
 
     # Fast producer: read at poll_ms
+    # REVIEW: kept as flat_map — this demo exists to show what an unbounded
+    # merge does under a fast producer; coalescing here would delete the
+    # exact problem the backpressure strategies below are the fix for.
     upstream = rx.interval(timedelta(milliseconds=poll_ms), scheduler=scheduler).pipe(
         ops.flat_map(lambda _: read_attribute(device, "double_scalar")),
         ops.do_action(on_next=lambda _: globals().__setitem__("produced", produced + 1)),

@@ -42,8 +42,10 @@ async def main() -> None:
     print(f"  {'raw':>14}  {'avg(N={window})':>14}  {'delta':>14}")
     print("  " + "-" * 46)
 
+    # concat_map (not flat_map/exhaust): a sliding window must not lose a
+    # sample — a dropped tick would corrupt the window.
     rx.interval(timedelta(milliseconds=interval_ms), scheduler=scheduler).pipe(
-        ops.flat_map(lambda _: read_attribute(device, "double_scalar")),
+        ops.concat_map(lambda _: read_attribute(device, "double_scalar")),
         ops.buffer_with_count(count=window, skip=1),
         ops.map(lambda buf: (buf[-1], sum(buf) / len(buf))),
     ).subscribe(

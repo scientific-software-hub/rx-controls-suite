@@ -58,8 +58,11 @@ async def main() -> None:
     print("  " + "-" * 22)
 
     rx.interval(timedelta(milliseconds=interval_ms), scheduler=scheduler).pipe(
-        # Simple retry: up to 3 immediate retries per tick on error
-        ops.flat_map(
+        # Simple retry: up to 3 immediate retries per tick on error.
+        # concat_map (not flat_map): a tick's retries must finish (or give
+        # up) before the next tick's read starts — overlapping retries
+        # could otherwise race two reads against the same attribute.
+        ops.concat_map(
             lambda _: read_attribute(device, "double_scalar").pipe(
                 ops.retry(3)
             )

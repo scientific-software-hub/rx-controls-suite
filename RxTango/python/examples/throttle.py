@@ -43,7 +43,10 @@ async def main() -> None:
     print("  " + "-" * 22)
 
     rx.interval(timedelta(milliseconds=poll_ms), scheduler=scheduler).pipe(
-        ops.flat_map(lambda _: read_attribute(device, "double_scalar")),
+        # concat_map (not flat_map): every tick issues its own read, in
+        # order, with no pileup under latency; sample() does the coalescing
+        # downstream — that's the demo's point, not the read step's.
+        ops.concat_map(lambda _: read_attribute(device, "double_scalar")),
         ops.sample(timedelta(milliseconds=sample_ms), scheduler=scheduler),
     ).subscribe(
         on_next=lambda v: print(f"  {v:>+20.6f}"),

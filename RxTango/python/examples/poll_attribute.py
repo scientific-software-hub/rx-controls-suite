@@ -37,8 +37,11 @@ async def main() -> None:
     print(f"  {'value':>20}")
     print("  " + "-" * 22)
 
+    # map + exclusive() (RxPY has no exhaust_map): a pure display poll —
+    # only the freshest value matters, and a skipped tick is harmless.
     rx.interval(timedelta(milliseconds=interval_ms), scheduler=scheduler).pipe(
-        ops.flat_map(lambda _: read_attribute(device, attr)),
+        ops.map(lambda _: read_attribute(device, attr)),
+        ops.exclusive(),
     ).subscribe(
         on_next=lambda v: print(f"  {v:>+20.6f}"),
         on_error=lambda e: print(f"  ERROR: {e}", file=sys.stderr),

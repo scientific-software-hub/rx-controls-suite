@@ -39,8 +39,10 @@ async def main() -> None:
     period = timedelta(milliseconds=interval_ms)
 
     def make_buffered(attr: str) -> rx.Observable:
+        # concat_map (not flat_map/exhaust): a window buffer must not lose a
+        # sample — a dropped tick would corrupt the window.
         return rx.interval(period, scheduler=scheduler).pipe(
-            ops.flat_map(lambda _: read_attribute(device, attr)),
+            ops.concat_map(lambda _: read_attribute(device, attr)),
             ops.buffer_with_count(count=window, skip=window),  # non-overlapping
         )
 

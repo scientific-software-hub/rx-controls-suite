@@ -42,8 +42,11 @@ async def main() -> None:
 
     def make_poll(attr: str) -> rx.Observable:
         """Poll *attr* at *period*, tag each value with the attribute name."""
+        # concat_map (not flat_map/exhaust): an alarm edge must never be
+        # dropped or reordered — a coalescing poll could skip the one tick
+        # that crossed the threshold.
         return rx.interval(period, scheduler=scheduler).pipe(
-            ops.flat_map(lambda _: read_attribute(device, attr)),
+            ops.concat_map(lambda _: read_attribute(device, attr)),
             ops.map(lambda v: (attr, v)),
             ops.catch(lambda e, _: rx.empty()),  # isolate per-device errors
         )

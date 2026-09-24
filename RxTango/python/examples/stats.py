@@ -38,8 +38,10 @@ async def main() -> None:
 
     print(f"Collecting {n_samples} samples from {device}  (interval={interval_ms} ms) …\n")
 
+    # concat_map (not flat_map/exhaust): a fixed-N sample must not drop or
+    # reorder a reading, or the final N-sample stats would be wrong.
     rx.interval(timedelta(milliseconds=interval_ms), scheduler=scheduler).pipe(
-        ops.flat_map(lambda _: read_attribute(device, "double_scalar")),
+        ops.concat_map(lambda _: read_attribute(device, "double_scalar")),
         ops.take(n_samples),
         ops.to_list(),
     ).subscribe(
