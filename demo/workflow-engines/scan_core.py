@@ -109,14 +109,19 @@ def shutter_supervisor(ctx: Context, health: rx.Observable) -> rx.Observable:
     """Auto-close/open the shutter on beam-health transitions.
 
     Same idiom as ``guarded_scan.py``'s supervisor: map → distinct_until_changed
-    → flat_map(write_pv). Emits the new shutter state (bool) on every
+    → concat_map(write_pv). Emits the new shutter state (bool) on every
     transition; never completes on its own — the caller subscribes once for
     the life of the scan and disposes at the end.
+
+    concat_map, not flat_map: two rapid transitions could otherwise start
+    two concurrent writes that complete out of order, leaving the shutter
+    in the wrong terminal state. distinct_until_changed already caps the
+    backlog at the number of real transitions, so serializing costs nothing.
     """
     return health.pipe(
         ops.map(lambda h: h.current >= MIN_BEAM_CURRENT),
         ops.distinct_until_changed(),
-        ops.flat_map(lambda ok: write_pv(PV_SHUTTER, 1 if ok else 0, ctx).pipe(
+        ops.concat_map(lambda ok: write_pv(PV_SHUTTER, 1 if ok else 0, ctx).pipe(
             ops.map(lambda _: ok))),
     )
 

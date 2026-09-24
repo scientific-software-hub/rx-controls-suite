@@ -135,8 +135,12 @@ async def lifespan(app: FastAPI):
             st.live["stale"] = True
             loop.call_later(2.0, start_poller)
 
+        # concat_map (not flat_map/exhaust): ingest() tracks discrete events
+        # (each cur_proj advance, the ABORTED transition) — a coalescing
+        # poll could drop the one tick that caught an event, corrupting
+        # events_total/aborted_at, not just show a stale display value.
         rx.interval(timedelta(milliseconds=POLL_MS), scheduler=scheduler).pipe(
-            ops.flat_map(lambda _: rx.zip(
+            ops.concat_map(lambda _: rx.zip(
                 read_attribute(CONTROLLER, "BeamCurrent"),      # Tango
                 read_attribute(CONTROLLER, "InterlockCount"),   # Tango
                 read_pv(PV_SHUTTER, ctx),                       # EPICS

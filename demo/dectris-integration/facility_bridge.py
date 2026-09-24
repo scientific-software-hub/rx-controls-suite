@@ -52,8 +52,12 @@ async def main() -> None:
             write_pv("FAC:BEAM_OK", 1 if is_healthy(h) else 0, ctx),
         )
 
+    # concat_map, not flat_map: this is a write, not an independent read —
+    # two overlapping mirror() batches could complete out of order and
+    # leave the FAC:* PVs reflecting an older ring_health tick than the one
+    # that actually arrived last.
     ring_health(scheduler, interval_ms=500).pipe(
-        ops.flat_map(mirror),
+        ops.concat_map(mirror),
     ).subscribe(
         on_next=lambda _: None,
         on_error=lambda e: print(f"facility_bridge ERROR: {e}", file=sys.stderr),

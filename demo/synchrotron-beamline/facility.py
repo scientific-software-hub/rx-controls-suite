@@ -108,9 +108,18 @@ def ring_health(scheduler, interval_ms: int = 1000) -> rx.Observable:
 
     This mirrors the Java dashboard's ``readController()`` + ``readSector()``
     pattern from RingDevices.java, re-expressed in five lines of Rx.
+
+    Uses ``concat_map``, not ``flat_map`` or an exhaust-style coalesce: this
+    stream is ``share()``d and one of its consumers (``guarded_scan.py``'s
+    abort trigger) watches ``interlocks`` for an edge — a coalescing poll
+    could silently drop the one tick that caught the interlock, delaying
+    or missing the abort. The interlock protection itself still lives in
+    the Tango device server (Rx only observes it); this operator choice
+    only affects how reliably Rx's *observation* of that state reaches its
+    subscribers.
     """
     return rx.interval(timedelta(milliseconds=interval_ms), scheduler=scheduler).pipe(
-        ops.flat_map(lambda _: rx.zip(
+        ops.concat_map(lambda _: rx.zip(
             read_attribute(CONTROLLER, "BeamCurrent"),
             read_attribute(CONTROLLER, "InterlockCount"),
             read_attribute(SECTOR_04,  "OrbitX"),
@@ -130,11 +139,16 @@ def poll_until(pv_name: str, predicate, period_ms: float, ctx, scheduler) -> rx.
     """Poll *pv_name* every *period_ms* ms until *predicate(value)* is True.
 
     Emits the first matching value, then completes.
-    Pattern: interval → flat_map(read_pv) → filter → take(1).
+    Pattern: interval → map(read_pv) + exclusive() → filter → take(1).
+
+    map + exclusive() (RxPY has no exhaust_map), not flat_map: this waits
+    for a stable condition, not a fleeting edge, so dropping a tick while a
+    slow read is in flight only delays detection by one period.
     """
     from rxepics.channel import read_pv
     return rx.interval(timedelta(milliseconds=period_ms), scheduler=scheduler).pipe(
-        ops.flat_map(lambda _: read_pv(pv_name, ctx)),
+        ops.map(lambda _: read_pv(pv_name, ctx)),
+        ops.exclusive(),
         ops.filter(predicate),
         ops.take(1),
     )

@@ -137,8 +137,12 @@ class EpicsFacility(_CachingFacility):
     name = "epics"
 
     def __init__(self, ctx, scheduler, interval_ms: int = 500) -> None:
+        # concat_map, not flat_map/exhaust: this health stream gates
+        # acquisition (wait_until_healthy/abort_on watch interlock_ok for an
+        # edge), the same role TangoFacility's ring_health plays — a
+        # coalescing poll could drop the one tick that caught an interlock.
         health = rx.interval(timedelta(milliseconds=interval_ms), scheduler=scheduler).pipe(
-            ops.flat_map(lambda _: rx.zip(
+            ops.concat_map(lambda _: rx.zip(
                 read_pv("FAC:CURRENT", ctx),
                 read_pv("FAC:INTERLOCK", ctx),
                 read_pv("FAC:ORBIT_X", ctx),

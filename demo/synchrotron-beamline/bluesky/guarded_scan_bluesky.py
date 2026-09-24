@@ -211,9 +211,13 @@ def main() -> None:
             return write_pv(PV_SCAN_STATUS, status, ctx)
         return rx.empty()
 
+    # concat_map, not flat_map: documents must mirror to PVs in the order
+    # the RunEngine emits them — an out-of-order write (e.g. "stop"'s
+    # SCAN_DONE landing before a late "event" write) would leave the
+    # dashboard showing a stale or wrong terminal state.
     docs.pipe(
         ops.observe_on(rx_loop.scheduler),
-        ops.flat_map(_pv_updates),
+        ops.concat_map(_pv_updates),
     ).subscribe(on_error=lambda e: print(f"  scan-PV mirror error: {e}", file=sys.stderr))
 
     # ── The plan ───────────────────────────────────────────────────────────────

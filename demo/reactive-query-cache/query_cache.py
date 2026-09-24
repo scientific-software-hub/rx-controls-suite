@@ -35,9 +35,13 @@ cache is built from the RxPY operators already in the suite.
 Usage::
 
     def source_factory(key: str) -> rx.Observable:
-        # Return a cold polling Observable for this key.
+        # Return a cold polling Observable for this key. map + exclusive()
+        # (RxPY has no exhaust_map), not flat_map: only the freshest value
+        # matters to a cache consumer, and a skipped tick under load is
+        # harmless.
         return rx.interval(timedelta(milliseconds=poll_ms), scheduler=scheduler).pipe(
-            ops.flat_map(lambda _: read_attribute(device, key_to_attr[key])),
+            ops.map(lambda _: read_attribute(device, key_to_attr[key])),
+            ops.exclusive(),
             ops.map(float),
         )
 

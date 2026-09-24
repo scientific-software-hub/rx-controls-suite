@@ -400,13 +400,18 @@ async def main() -> None:
     )
 
     # ── 3. Shutter supervisor ─────────────────────────────────────────────────
-    # Three operators: map → distinct_until_changed → flat_map(write_pv).
+    # Three operators: map → distinct_until_changed → concat_map(write_pv).
     # When beam drops: close shutter. When it recovers: open shutter.
     # distinct_until_changed ensures we only write on state *transitions*.
+    # concat_map, not flat_map: two rapid transitions could otherwise start
+    # two concurrent writes that complete out of order, leaving the shutter
+    # in the wrong terminal state. distinct_until_changed already caps the
+    # backlog at the number of real transitions, so there's nothing to pile
+    # up by serializing.
     supervisor_disp = health.pipe(
         ops.map(lambda h: h.current >= MIN_BEAM_CURRENT),
         ops.distinct_until_changed(),
-        ops.flat_map(
+        ops.concat_map(
             lambda ok: write_pv(PV_SHUTTER, 1 if ok else 0, ctx)
         ),
     ).subscribe(

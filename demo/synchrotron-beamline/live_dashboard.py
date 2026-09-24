@@ -249,8 +249,12 @@ async def lifespan(app: FastAPI):
             app.state.snapshot = {**app.state.snapshot, "stale": True}
             loop.call_later(2.0, start_poller)
 
+        # map + exclusive() (RxPY has no exhaust_map): pure display poll —
+        # only the freshest 46-read snapshot matters, and this route feeds
+        # no automated action, so a dropped tick under load is harmless.
         rx.interval(timedelta(seconds=1), scheduler=scheduler).pipe(
-            ops.flat_map(lambda _: make_reads()),
+            ops.map(lambda _: make_reads()),
+            ops.exclusive(),
             ops.map(build_snapshot),
         ).subscribe(
             on_next=cache,

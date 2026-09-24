@@ -111,18 +111,24 @@ def _make_sources(scheduler, ctx) -> dict:
     """Build the key → source-factory mapping.
 
     All sources follow the same pattern as facility.ring_health():
-        rx.interval(POLL_MS) → flat_map(single-shot read) → map(cast)
+        rx.interval(POLL_MS) → map(single-shot read) + exclusive() → map(cast)
     This makes the upstream load metric transparent: ops/sec = active_keys / s.
+
+    map + exclusive() (RxPY has no exhaust_map), not flat_map: these are
+    cache-fill display polls — only the freshest value matters to a viewer,
+    and a skipped tick under load is harmless.
     """
     def tango_poller(device: str, attr: str, cast=float):
         return rx.interval(timedelta(milliseconds=POLL_MS), scheduler=scheduler).pipe(
-            ops.flat_map(lambda _: read_attribute(device, attr)),
+            ops.map(lambda _: read_attribute(device, attr)),
+            ops.exclusive(),
             ops.map(cast),
         )
 
     def epics_poller(pv: str, cast=float):
         return rx.interval(timedelta(milliseconds=POLL_MS), scheduler=scheduler).pipe(
-            ops.flat_map(lambda _: read_pv(pv, ctx)),
+            ops.map(lambda _: read_pv(pv, ctx)),
+            ops.exclusive(),
             ops.map(cast),
         )
 

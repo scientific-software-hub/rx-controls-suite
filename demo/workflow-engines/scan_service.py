@@ -354,13 +354,17 @@ async def lifespan(app: FastAPI):
     # anchor the shared ring poll for the whole service lifetime
     anchor1 = rx_loop.subscribe(health, on_next=_on_health,
                                 on_error=lambda e: app.state.machine.update(stale=True))
+    # map + exclusive() (RxPY has no exhaust_map): this only refreshes a
+    # dashboard display snapshot — only the freshest tick matters, and a
+    # skipped one under load is harmless.
     extras = rx.timer(timedelta(0), timedelta(seconds=1), scheduler=rx_loop.scheduler).pipe(
-        ops.flat_map(lambda _: rx.zip(
+        ops.map(lambda _: rx.zip(
             read_attribute(CONTROLLER, "ScenarioId"),
             read_pv(PV_SCAN_CUR_ANGLE, ctx),
             read_pv(PV_SHUTTER, ctx),
             read_pv(PV_SCAN_STATUS, ctx),
         ).pipe(ops.catch(lambda _e, _src: rx.empty()))),  # a failed tick is skipped, not fatal
+        ops.exclusive(),
     )
     anchor2 = rx_loop.subscribe(extras, on_next=_on_extras, on_error=lambda e: None)
 

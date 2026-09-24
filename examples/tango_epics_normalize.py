@@ -62,9 +62,15 @@ from rxtango import read_attribute  # formerly the inline read_tango_attr helper
 
 
 def poll_tango_attr(device: str, attribute: str, interval_ms: int, scheduler) -> rx.Observable:
-    """Interval-polled Tango attribute via rxtango.read_attribute."""
+    """Interval-polled Tango attribute via rxtango.read_attribute.
+
+    map + exclusive() (RxPY has no exhaust_map), not flat_map: display poll
+    — only the freshest value matters, a skipped tick under load is
+    harmless.
+    """
     return rx.interval(timedelta(milliseconds=interval_ms), scheduler=scheduler).pipe(
-        ops.flat_map(lambda _: read_attribute(device, attribute))
+        ops.map(lambda _: read_attribute(device, attribute)),
+        ops.exclusive(),
     )
 
 
@@ -129,8 +135,11 @@ async def demo_b_pipeline(
 
     rx.interval(timedelta(milliseconds=interval_ms), scheduler=scheduler).pipe(
 
-        # Step 1+2: read both systems in parallel on every tick
-        ops.flat_map(
+        # Step 1+2: read both systems in parallel on every tick.
+        # concat_map (not flat_map): each tick's pair is serialized, so
+        # ticks stay in order under load (Task D would replace this zip
+        # with correlate_snapshot — this is one of the demos it applies to).
+        ops.concat_map(
             lambda _: rx.zip(
                 read_attribute(device, TANGO_ATTR),
                 read_pv(EPICS_READ, ctx),
@@ -144,8 +153,9 @@ async def demo_b_pipeline(
             f"  {t[0]:>+14.4f}  {t[1]:>+12.4f}  {t[2]:>+14.6f}", end="  "
         )),
 
-        # Step 4: write normalized value to EPICS
-        ops.flat_map(lambda t: write_pv(EPICS_WRITE, t[2], ctx)),
+        # Step 4: write normalized value to EPICS. concat_map (not
+        # flat_map): a write must not race the next tick's write.
+        ops.concat_map(lambda t: write_pv(EPICS_WRITE, t[2], ctx)),
 
     ).subscribe(
         on_next=lambda v: print(f"→ {EPICS_WRITE} = {v:.6f}"),
