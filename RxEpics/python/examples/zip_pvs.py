@@ -1,10 +1,14 @@
-"""Poll two PVs on a fixed interval, zip the values, and print them as a pair.
+"""Poll two PVs on a fixed interval, correlate the readings, and print them
+as a pair with their measured timestamp skew.
 
 This demo shows the core Rx value proposition: combining data from multiple
 sources with a single expression.
 
-rx.zip(obs1, obs2) issues both reads concurrently and combines their results
-only when BOTH have completed — the pair is always coherent.
+correlate_snapshot(obs1, obs2) issues both reads concurrently and combines
+their results only when BOTH have completed — same guarantee as a bare
+rx.zip — but also reports the measured gap between the two PVs' own
+timestamps, since "both completed" is a claim about arrival, not about
+whether the two values describe the same instant.
 
 Compare with the naive approach: two sequential reads can be torn by a value
 update between them.
@@ -30,7 +34,8 @@ import reactivex.operators as ops
 from reactivex.scheduler.eventloop import AsyncIOScheduler
 from caproto.asyncio.client import Context
 
-from rxepics.channel import read_pv
+from rxepics.channel import read_pv_ts
+from rxepics.correlate import correlate_snapshot
 
 
 async def main():
@@ -46,26 +51,28 @@ async def main():
     scheduler = AsyncIOScheduler(loop)
     ctx = Context()
 
-    print(f"Zipping {pv1} + {pv2} every {interval_ms} ms — Ctrl+C to stop")
-    print(f"{'pv1':<20}  {'pv2':<20}  difference")
-    print("-" * 55)
+    print(f"Correlating {pv1} + {pv2} every {interval_ms} ms — Ctrl+C to stop")
+    print(f"{'pv1':<20}  {'pv2':<20}  {'difference':<12}  skew (s)")
+    print("-" * 70)
 
     rx.interval(timedelta(milliseconds=interval_ms), scheduler=scheduler).pipe(
-        # On each tick, zip fires both reads concurrently.
+        # On each tick, correlate_snapshot fires both reads concurrently.
         # The combiner lambda only runs when BOTH complete successfully.
-        # If either read fails, zip propagates the error.
+        # If either read fails, it propagates the error, same as rx.zip.
         # concat_map (not flat_map): each tick's pair is serialized, so
         # printed lines stay in tick order under load.
         ops.concat_map(
-            lambda _: rx.zip(
-                read_pv(pv1, ctx),
-                read_pv(pv2, ctx),
+            lambda _: correlate_snapshot(
+                read_pv_ts(pv1, ctx),
+                read_pv_ts(pv2, ctx),
             ).pipe(
-                ops.map(lambda pair: (pair[0], pair[1], pair[0] - pair[1]))
+                ops.map(lambda c: (c.values[0], c.values[1], c.values[0] - c.values[1], c.skew))
             )
         )
     ).subscribe(
-        on_next=lambda t: print(f"[{int(time.time() * 1000)}]  {t[0]:+.4f}  |  {t[1]:+.4f}  |  {t[2]:+.4f}"),
+        on_next=lambda t: print(
+            f"[{int(time.time() * 1000)}]  {t[0]:+.4f}  |  {t[1]:+.4f}  |  {t[2]:+.4f}  |  skew={t[3]:.4f}s"
+        ),
         on_error=lambda e: print(f"ERROR: {e}", file=sys.stderr),
         scheduler=scheduler,
     )

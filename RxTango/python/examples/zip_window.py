@@ -1,7 +1,12 @@
-"""Time-windowed zip: synchronise two attributes sampled in the same window.
+"""Time-windowed zip: pair up two attributes sampled in the same window,
+reporting the measured timestamp skew of each pair.
 
 Uses ops.buffer_with_count + rx.zip to collect bursts from two fast-polled
-streams and compare samples taken in the same window.
+streams and pair samples by position within the window — this pairs by
+*count*, not by time, so "window N" from each stream can still be
+measurably apart; correlate_snapshot's single-pair skew doesn't apply
+directly to a pair of buffered lists, so each pair's skew is computed
+the same way, by index, once both windows have filled.
 
 Mirrors `TangoTestZipWindow.java`.
 
@@ -24,7 +29,7 @@ import reactivex as rx
 import reactivex.operators as ops
 from reactivex.scheduler.eventloop import AsyncIOScheduler
 
-from rxtango import read_attribute
+from rxtango import read_attribute_ts
 
 
 async def main() -> None:
@@ -42,7 +47,7 @@ async def main() -> None:
         # concat_map (not flat_map/exhaust): a window buffer must not lose a
         # sample — a dropped tick would corrupt the window.
         return rx.interval(period, scheduler=scheduler).pipe(
-            ops.concat_map(lambda _: read_attribute(device, attr)),
+            ops.concat_map(lambda _: read_attribute_ts(device, attr)),
             ops.buffer_with_count(count=window, skip=window),  # non-overlapping
         )
 
@@ -51,11 +56,19 @@ async def main() -> None:
     rx.zip(
         make_buffered("double_scalar"),
         make_buffered("long_scalar"),
+    ).pipe(
+        # Pair by position within the window; report each pair's value and
+        # its measured skew — "window N from each stream" is a count-based
+        # pairing, not a time-based one, so the two samples at position i
+        # can still be measurably apart.
+        ops.map(lambda pair: [
+            (a.value, b.value, abs(a.ts - b.ts))
+            for a, b in zip(pair[0], pair[1])
+        ]),
     ).subscribe(
-        on_next=lambda pair: print(
-            f"  doubles={[f'{v:+.2f}' for v in pair[0]]}  "
-            f"longs={list(pair[1])}"
-        ),
+        on_next=lambda rows: print("\n".join(
+            f"  double={r[0]:+.2f}  long={r[1]}  skew={r[2]:.4f}s" for r in rows
+        ) + "\n"),
         on_error=lambda e: print(f"  ERROR: {e}", file=sys.stderr),
         scheduler=scheduler,
     )

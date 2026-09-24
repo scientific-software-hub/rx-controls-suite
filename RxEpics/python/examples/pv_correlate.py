@@ -1,10 +1,14 @@
-"""Read two PVs simultaneously on every tick and print both values with their difference.
+"""Read two PVs on every tick and print both values with their difference
+and their measured timestamp skew.
 
-The two reads are issued in parallel by rx.zip — no threads, no futures, no locks.
-Both values arrive in the same tick, always in sync.
+The two reads are issued in parallel by correlate_snapshot (built on
+rx.zip) — no threads, no futures, no locks. The pair is only emitted when
+BOTH reads complete successfully, but "both complete" is not "the same
+instant": each PV's own timestamp is compared, and the skew between them
+is printed alongside the values, not assumed away.
 
-Compare with the naive approach: two sequential reads can be torn by a value
-update between them.
+Compare with the naive approach: two sequential reads can be torn by a
+value update between them.
 
 Usage:
     python pv_correlate.py <pv1> <pv2> [interval-ms]
@@ -25,7 +29,8 @@ import reactivex.operators as ops
 from reactivex.scheduler.eventloop import AsyncIOScheduler
 from caproto.asyncio.client import Context
 
-from rxepics.channel import read_pv
+from rxepics.channel import read_pv_ts
+from rxepics.correlate import correlate_snapshot
 
 
 async def main():
@@ -41,21 +46,27 @@ async def main():
     scheduler = AsyncIOScheduler(loop)
     ctx = Context()
 
-    print(f"{'pv1':<16}  {'pv2':<16}  difference")
-    print("-" * 52)
+    print(f"{'pv1':<16}  {'pv2':<16}  {'difference':<12}  skew (s)")
+    print("-" * 68)
 
     rx.interval(timedelta(milliseconds=interval_ms), scheduler=scheduler).pipe(
-        # rx.zip fires both reads in parallel and combines their results.
-        # The pair is only emitted when BOTH reads complete successfully.
-        # If either read fails, zip propagates the error — no half-pair.
+        # correlate_snapshot fires both reads in parallel and combines
+        # their results, exactly like rx.zip — the pair is only emitted
+        # when BOTH reads complete successfully, and a failed read
+        # propagates as an error, no half-pair. What it adds over a bare
+        # zip is c.skew: the measured gap between the two PVs' own
+        # timestamps, which "both completed" says nothing about on its own.
         # concat_map (not flat_map): each tick's pair is serialized, so
         # printed lines stay in tick order under load.
         ops.concat_map(
-            lambda _: rx.zip(
-                read_pv(pv1, ctx),
-                read_pv(pv2, ctx),
+            lambda _: correlate_snapshot(
+                read_pv_ts(pv1, ctx),
+                read_pv_ts(pv2, ctx),
             ).pipe(
-                ops.map(lambda pair: f"{pair[0]:+16.4f}  {pair[1]:+16.4f}  {pair[0] - pair[1]:+.4f}")
+                ops.map(lambda c: (
+                    f"{c.values[0]:+16.4f}  {c.values[1]:+16.4f}  "
+                    f"{c.values[0] - c.values[1]:+12.4f}  {c.skew:.4f}"
+                ))
             )
         )
     ).subscribe(

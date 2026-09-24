@@ -7,16 +7,24 @@ A beam current monitor is exposed as a Tango device attribute (double_scalar).
 We compute normalized intensity = detector_counts / |beam_current| on every
 tick and write the result back to EPICS (TEST:DOUBLE).
 
-The same ReactiveX operator vocabulary — zip, map, flat_map, interval —
+The same ReactiveX operator vocabulary — zip, map, concat_map, interval —
 works identically across both control systems.
 
   Tango   sys/tg_test/1  double_scalar  →─┐
-                                           ├─ zip → normalize → write EPICS TEST:DOUBLE
+                                           ├─ correlate → normalize → write EPICS TEST:DOUBLE
   EPICS   TEST:CALC                     →─┘
 
+correlate_snapshot (built on rx.zip) is used instead of a bare zip: it
+reports the measured skew between the Tango attribute's own
+DeviceAttribute.time and the EPICS PV's own CA timestamp, since "both
+reads completed" says nothing on its own about whether the two values
+describe the same instant — the whole point of this demo is that they
+come from two independent control systems with no shared clock.
+
 Demo A (runs once):
-    Cross-system snapshot via rx.zip — both reads fire in parallel,
-    the pair is only emitted when BOTH complete.
+    Cross-system snapshot via correlate_snapshot — both reads fire in
+    parallel, the pair is only emitted when BOTH complete, and the
+    measured timestamp skew is reported alongside the values.
 
 Demo B (runs until Ctrl+C):
     Continuous pipeline — poll at <interval-ms>, normalize, write result.
@@ -56,9 +64,11 @@ import reactivex.operators as ops
 from reactivex.scheduler.eventloop import AsyncIOScheduler
 from caproto.asyncio.client import Context
 
-from rxepics.channel import read_pv
+from rxepics.channel import read_pv_ts
 from rxepics.channel_write import write_pv
-from rxtango import read_attribute  # formerly the inline read_tango_attr helper
+from rxepics.correlate import correlate_snapshot  # duck-typed on Reading; works for
+                                                    # either package's Reading objects
+from rxtango import read_attribute, read_attribute_ts  # formerly the inline read_tango_attr helper
 
 
 def poll_tango_attr(device: str, attribute: str, interval_ms: int, scheduler) -> rx.Observable:
@@ -84,8 +94,12 @@ EPICS_WRITE = "TEST:DOUBLE"
 async def demo_a_snapshot(device: str, ctx: Context, scheduler) -> None:
     """Demo A — one-shot cross-system snapshot.
 
-    rx.zip fires both reads in parallel and emits a single pair once
-    BOTH complete.  If either fails, the error propagates immediately.
+    correlate_snapshot fires both reads in parallel and emits a single
+    pair once BOTH complete — same guarantee as a bare rx.zip.  If either
+    fails, the error propagates immediately.  It additionally reports the
+    measured gap between the Tango attribute's own timestamp and the
+    EPICS PV's own timestamp: the two control systems share no clock, so
+    "both completed" is not "the same instant".
     """
     print("\n── Demo A: cross-system snapshot (one shot) ──────────────────────")
     print(f"  Tango  {device}/{TANGO_ATTR}")
@@ -93,14 +107,15 @@ async def demo_a_snapshot(device: str, ctx: Context, scheduler) -> None:
 
     done = asyncio.Event()
 
-    rx.zip(
-        read_attribute(device, TANGO_ATTR),
-        read_pv(EPICS_READ, ctx),
+    correlate_snapshot(
+        read_attribute_ts(device, TANGO_ATTR),
+        read_pv_ts(EPICS_READ, ctx),
     ).subscribe(
-        on_next=lambda pair: print(
-            f"\n  beam_current  = {pair[0]:+.4f}  (Tango)\n"
-            f"  detector      = {pair[1]:+.4f}  (EPICS)\n"
-            f"  normalized    = {pair[1] / max(abs(pair[0]), 1e-9):+.6f}"
+        on_next=lambda c: print(
+            f"\n  beam_current  = {c.values[0]:+.4f}  (Tango)\n"
+            f"  detector      = {c.values[1]:+.4f}  (EPICS)\n"
+            f"  normalized    = {c.values[1] / max(abs(c.values[0]), 1e-9):+.6f}\n"
+            f"  skew          = {c.skew:.4f}s"
         ),
         on_error=lambda e: (print(f"  ERROR: {e}", file=sys.stderr), done.set()),
         on_completed=done.set,
@@ -120,37 +135,39 @@ async def demo_b_pipeline(
 
     Every tick:
       1. Read  Tango   double_scalar   (beam current)
-      2. Read  EPICS   TEST:CALC       (raw detector counts)  — in parallel via zip
+      2. Read  EPICS   TEST:CALC       (raw detector counts)  — in parallel via correlate_snapshot
       3. Map   normalize: counts / |current|
       4. Write EPICS   TEST:DOUBLE     (normalized intensity)
-      5. Print confirmation
+      5. Print confirmation, including the measured cross-system skew
 
     No threads. No locks. No callbacks.
     """
     print("\n── Demo B: continuous cross-system pipeline (Ctrl+C to stop) ────")
     print(f"  {device}/{TANGO_ATTR}  ×  {EPICS_READ}  →  {EPICS_WRITE}")
     print(f"  interval: {interval_ms} ms\n")
-    print(f"  {'beam_current':>14}  {'detector':>12}  {'normalized':>14}  written")
-    print("  " + "-" * 58)
+    print(f"  {'beam_current':>14}  {'detector':>12}  {'normalized':>14}  {'skew (s)':>10}  written")
+    print("  " + "-" * 70)
 
     rx.interval(timedelta(milliseconds=interval_ms), scheduler=scheduler).pipe(
 
-        # Step 1+2: read both systems in parallel on every tick.
+        # Step 1+2: read both systems in parallel on every tick via
+        # correlate_snapshot — same guarantee as a bare rx.zip, plus the
+        # measured skew between the Tango attribute's and the EPICS PV's
+        # own timestamps (the two systems share no clock).
         # concat_map (not flat_map): each tick's pair is serialized, so
-        # ticks stay in order under load (Task D would replace this zip
-        # with correlate_snapshot — this is one of the demos it applies to).
+        # ticks stay in order under load.
         ops.concat_map(
-            lambda _: rx.zip(
-                read_attribute(device, TANGO_ATTR),
-                read_pv(EPICS_READ, ctx),
+            lambda _: correlate_snapshot(
+                read_attribute_ts(device, TANGO_ATTR),
+                read_pv_ts(EPICS_READ, ctx),
             )
         ),
 
         # Step 3: normalize — guard against near-zero beam current
-        ops.map(lambda pair: (pair[0], pair[1], pair[1] / max(abs(pair[0]), 1e-9))),
+        ops.map(lambda c: (c.values[0], c.values[1], c.values[1] / max(abs(c.values[0]), 1e-9), c.skew)),
 
         ops.do_action(on_next=lambda t: print(
-            f"  {t[0]:>+14.4f}  {t[1]:>+12.4f}  {t[2]:>+14.6f}", end="  "
+            f"  {t[0]:>+14.4f}  {t[1]:>+12.4f}  {t[2]:>+14.6f}  {t[3]:>10.4f}", end="  "
         )),
 
         # Step 4: write normalized value to EPICS. concat_map (not

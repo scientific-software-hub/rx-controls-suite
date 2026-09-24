@@ -1,7 +1,13 @@
-"""Continuously correlated reads of two attributes using rx.zip + interval.
+"""Continuously correlated reads of two attributes, reporting their
+measured timestamp skew.
 
-Every interval tick, both attributes are read in parallel.  The pair is emitted
-only when BOTH reads complete.  If either fails, the tick is silently dropped.
+Every interval tick, both attributes are read in parallel via
+correlate_snapshot (built on rx.zip).  The pair is emitted only when BOTH
+reads complete — same guarantee as a bare zip.  If either fails, the tick
+is silently dropped.  Correlated.skew is the measured gap between the two
+attributes' own DeviceAttribute.time values, not the read-completion time:
+"both completed" says nothing on its own about whether the two values
+describe the same instant.
 
 Mirrors `TangoTestCorrelate.java`.
 
@@ -23,7 +29,8 @@ import reactivex as rx
 import reactivex.operators as ops
 from reactivex.scheduler.eventloop import AsyncIOScheduler
 
-from rxtango import read_attribute
+from rxtango import read_attribute_ts
+from rxtango.correlate import correlate_snapshot
 
 
 async def main() -> None:
@@ -34,23 +41,24 @@ async def main() -> None:
     scheduler = AsyncIOScheduler(loop)
 
     print(f"Correlating {device}  every {interval_ms} ms  (Ctrl+C to stop)\n")
-    print(f"  {'double_scalar':>16}  {'long_scalar':>14}  {'diff':>14}")
-    print("  " + "-" * 50)
+    print(f"  {'double_scalar':>16}  {'long_scalar':>14}  {'diff':>14}  {'skew (s)':>10}")
+    print("  " + "-" * 62)
 
     # concat_map (not flat_map): each tick's pair is serialized, so printed
     # lines stay in tick order under load.
     rx.interval(timedelta(milliseconds=interval_ms), scheduler=scheduler).pipe(
         ops.concat_map(
-            lambda _: rx.zip(
-                read_attribute(device, "double_scalar"),
-                read_attribute(device, "long_scalar"),
+            lambda _: correlate_snapshot(
+                read_attribute_ts(device, "double_scalar"),
+                read_attribute_ts(device, "long_scalar"),
             ).pipe(
                 ops.catch(lambda e, _: rx.empty()),  # drop failed tick
             )
         ),
     ).subscribe(
-        on_next=lambda pair: print(
-            f"  {pair[0]:>+16.6f}  {pair[1]:>14}  {pair[0] - float(pair[1]):>+14.6f}"
+        on_next=lambda c: print(
+            f"  {c.values[0]:>+16.6f}  {c.values[1]:>14}  "
+            f"{c.values[0] - float(c.values[1]):>+14.6f}  {c.skew:>10.4f}"
         ),
         on_error=lambda e: print(f"  ERROR: {e}", file=sys.stderr),
         scheduler=scheduler,
