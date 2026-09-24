@@ -4,24 +4,12 @@ import asyncio
 import logging
 
 import reactivex as rx
-from caproto import CaprotoError
 from caproto.asyncio.client import Context
 
+from rxepics._ca_source import ca_push_source, simple_callback
 from rxepics.errors import PvUpdateError
 
 log = logging.getLogger(__name__)
-
-# caproto's asyncio client stores subscription callbacks by *weakref*
-# (CallbackHandler.add_callback). A closure kept alive only via the chain
-# subscribe() -> dispose -> AutoDetachObserver._subscription is not enough:
-# that chain is a reference *cycle* back through the closure's own captured
-# `observer` (== the AutoDetachObserver), and every example in this library
-# discards the Disposable returned by .subscribe() — so once nothing
-# external holds that cycle, a gc pass reaps it and the weakref dies with
-# it, silently dropping the subscription. Pinning the callback here, keyed
-# by identity, keeps it alive independent of what the Rx observer graph
-# does; dispose() unpins it.
-_KEEPALIVE: set = set()
 
 
 def _monitor_updates(pv_name: str, ctx: Context, handler) -> rx.Observable:
@@ -37,38 +25,14 @@ def _monitor_updates(pv_name: str, ctx: Context, handler) -> rx.Observable:
     :func:`monitor_pv` and :func:`monitor_errors` on the same PV share one
     underlying CA subscription.
     """
-
-    def subscribe(observer, scheduler=None):
-        ca_sub = None
-        disposed = False
-
-        def callback(sub, response):
-            handler(observer, response)
-
-        async def _start():
-            nonlocal ca_sub
-            try:
-                (pv,) = await ctx.get_pvs(pv_name)
-                if disposed:
-                    return
-                ca_sub = pv.subscribe()
-                ca_sub.add_callback(callback)
-                _KEEPALIVE.add(callback)
-            except CaprotoError as exc:
-                observer.on_error(exc)
-
-        asyncio.ensure_future(_start())
-
-        def dispose():
-            nonlocal disposed
-            disposed = True
-            _KEEPALIVE.discard(callback)
-            if ca_sub is not None:
-                asyncio.ensure_future(ca_sub.clear())
-
-        return dispose
-
-    return rx.create(subscribe)
+    return ca_push_source(
+        pv_name,
+        ctx,
+        get_registration=lambda pv: pv.subscribe(),
+        make_callback=simple_callback(handler),
+        add_callback=lambda registration, callback: registration.add_callback(callback),
+        teardown=lambda registration, token: asyncio.ensure_future(registration.clear()),
+    )
 
 
 def monitor_pv(pv_name: str, ctx: Context) -> rx.Observable:
