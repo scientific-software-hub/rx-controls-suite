@@ -15,9 +15,12 @@ Categories: **FIX** (unbounded merge on a poll-shaped site, corrected below) · 
 RxPY has no `exhaust_map`; the exhaust idiom is `ops.map(read) + ops.exclusive()` (verified
 against installed `reactivex` 4.1.0/5.1.0 — see `CHANGES.md`). RxJava 3.1.8 has no `exhaustMap`
 either; the repo's own coalesce precedent (`examples/XRayScan.java:134,149`) is
-`onBackpressureLatest().concatMapSingle(...)`. RxCpp gets `concat_map` only in this pass —
-display-class C++ rows are marked `// TODO(coalesce):` since no cppTango/PVXS/cmake toolchain
-is available here to validate a hand-rolled exhaust helper.
+`onBackpressureLatest().concatMapSingle(...)`. Per the confirmed decision, RxCpp gets
+`concat_map` only in this pass, with no separate exhaust/coalesce operator built — a hand-rolled
+busy-flag helper was judged not worth shipping uncompiled, since no cmake/cppTango/PVXS
+toolchain is available here to validate one. The display-class C++ rows below are noted as such
+in their rationale column, but the code itself carries only an inline comment explaining the
+`concat_map` choice — no distinct `// TODO(coalesce):` marker was added.
 
 ---
 
@@ -104,16 +107,17 @@ JUDGMENT row above; it converts to `concat_map`.
 
 ## C++ — FIX (`interval → flat_map(read)` → `concat_map`)
 
-`concat_map` swap only, per the C++ decision — no coalescing helper (uncompilable here; recorded
-as `// TODO(coalesce):` on the display-class rows).
+`concat_map` swap only, per the C++ decision — no coalescing helper built (uncompilable here);
+the display-class rows below are noted as such but carry no distinct code marker beyond the
+inline `concat_map` rationale comment.
 
 | File:line | → Operator | Note |
 |---|---|---|
-| `RxEpics/cpp/examples/poll_pv.cpp:33` | `concat_map` | `// TODO(coalesce):` display poll |
+| `RxEpics/cpp/examples/poll_pv.cpp:33` | `concat_map` | display poll (would be exhaust if RxCpp had the operator) |
 | `RxEpics/cpp/examples/pv_stats.cpp:38` | `concat_map` | window sample — no drop |
 | `RxEpics/cpp/examples/pv_correlate.cpp:39` | `concat_map` | see Task D note |
 | `RxEpics/cpp/examples/calibration_pipeline.cpp:36` | `concat_map` | (the write at L40 stays a sequential chain step) |
-| `RxTango/cpp/examples/poll_attribute.cpp:39` | `concat_map` | `// TODO(coalesce):` display poll |
+| `RxTango/cpp/examples/poll_attribute.cpp:39` | `concat_map` | display poll (would be exhaust if RxCpp had the operator) |
 | `RxTango/cpp/examples/running_stats.cpp:52` | `concat_map` | window sample |
 | `RxTango/cpp/examples/stats.cpp:37` | `concat_map` | fixed-N sample |
 | `RxTango/cpp/examples/sliding_average.cpp:39` | `concat_map` | window sample |
