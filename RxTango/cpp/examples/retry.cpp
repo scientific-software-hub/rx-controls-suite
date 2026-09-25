@@ -4,7 +4,7 @@
  * Three patterns:
  *   fixed   — retry(N) on the inner read; whole pipeline retries N times
  *   backoff — exponential backoff via zip+delay (sketch)
- *   inner   — retry inside flat_map; outer pipeline never sees the error
+ *   inner   — retry inside concat_map; outer pipeline never sees the error
  *
  * Mirrors Python's retry.py and Java's TangoTestRetry.java.
  *

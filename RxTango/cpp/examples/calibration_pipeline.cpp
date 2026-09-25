@@ -1,7 +1,7 @@
 /**
  * Continuous calibration pipeline — read → calibrate → write, forever.
  *
- * The same three reactive operators Java/Python use — interval · flat_map · map:
+ * The same three reactive operators Java/Python use — interval · concat_map · map:
  *   interval  →  read double_scalar
  *              →  calibrate (abs(v) * 2.0 + 1.5)
  *              →  write double_scalar_w
