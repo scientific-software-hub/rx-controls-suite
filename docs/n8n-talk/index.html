@@ -1,0 +1,1171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Same Scan, No Python — Orchestrating the Guarded Tomography Scan with n8n</title>
+<style>
+  :root {
+    --navy:      #1a3a5c;
+    --navy-dk:   #0e2540;
+    --orange:    #e87722;
+    --orange-lt: #f4a24e;
+    --white:     #ffffff;
+    --off-wh:    #f5f7fa;
+    --slate:     #334155;
+    --mid:       #64748b;
+    --border:    #dde3ec;
+    --green:     #166534;
+    --green-bg:  #f0fdf4;
+    --green-bd:  #86efac;
+    --amber:     #92400e;
+    --amber-bg:  #fffbeb;
+    --amber-bd:  #fcd34d;
+    --red:       #991b1b;
+    --red-bg:    #fef2f2;
+    --red-bd:    #fca5a5;
+    --n8n:       #ea4b71;   /* n8n red accent */
+    --n8n-lt:    #ff8aa5;
+    --n8n-bg:    #fff1f4;
+    --n8n-bd:    #ffc7d4;
+    --logic:     #7c3aed;   /* Switch / IF node family */
+    --logic-bg:  #f5f3ff;
+    --logic-bd:  #ddd6fe;
+    --wait:      #0d9aa5;   /* Wait node — same teal Prefect used */
+    --wait-bg:   #ecfdfd;
+    --wait-bd:   #a5e8ec;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { font-size: 150%; }
+  html, body {
+    width: 100%; height: 100%; overflow: hidden;
+    font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+    background: #000; color: var(--slate);
+  }
+
+  #deck { width: 100%; height: 100%; position: relative; }
+
+  .slide {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column;
+    opacity: 0; pointer-events: none;
+    transition: opacity .35s ease;
+  }
+  .slide.active { opacity: 1; pointer-events: all; }
+
+  /* Header */
+  .slide-header {
+    background: var(--navy-dk); padding: 0 2.5rem; height: 56px;
+    display: flex; align-items: center; justify-content: space-between;
+    flex-shrink: 0; border-bottom: 3px solid var(--n8n);
+  }
+  .logo { display: flex; align-items: center; gap: .6rem;
+    font-size: .8rem; color: rgba(255,255,255,.5); }
+  .logo strong { color: #fff; font-size: .92rem; }
+  .logo-mark {
+    width: 28px; height: 28px; border-radius: 5px;
+    background: var(--n8n);
+    display: grid; place-items: center;
+    font-weight: 900; font-size: .85rem; color: #fff;
+  }
+  .slide-num { font-size: .72rem; color: rgba(255,255,255,.3); letter-spacing: .08em; }
+
+  /* Section strip */
+  .section-strip {
+    background: var(--navy); padding: 1rem 2.5rem;
+    display: flex; align-items: baseline; gap: 1rem; flex-shrink: 0;
+  }
+  .section-num   { font-size: .65rem; letter-spacing: .15em; text-transform: uppercase;
+    color: var(--n8n-lt); font-weight: 700; }
+  .section-title { font-size: 1.5rem; font-weight: 700; color: #fff; line-height: 1.2; }
+  .section-sub   { font-size: .85rem; color: rgba(255,255,255,.4); margin-left: auto; }
+
+  /* Labels / pills */
+  .label {
+    display: inline-flex; align-items: center; font-size: .63rem; font-weight: 700;
+    letter-spacing: .1em; text-transform: uppercase;
+    padding: .17rem .52rem; border-radius: 9999px;
+  }
+  .label-navy   { background: #e8eef6; color: var(--navy);   border: 1px solid #b8d0ea; }
+  .label-n8n    { background: var(--n8n-bg); color: var(--n8n); border: 1px solid var(--n8n-bd); }
+  .label-green  { background: var(--green-bg); color: var(--green); border: 1px solid var(--green-bd); }
+  .label-amber  { background: var(--amber-bg); color: var(--amber); border: 1px solid var(--amber-bd); }
+  .label-red    { background: var(--red-bg);   color: var(--red);   border: 1px solid var(--red-bd); }
+
+  /* Two-column layout */
+  .two-col {
+    flex: 1; overflow: hidden;
+    display: grid; grid-template-columns: 1fr 1fr;
+  }
+  .panel {
+    padding: 1.1rem 1.7rem; overflow: hidden;
+    display: flex; flex-direction: column; justify-content: center; gap: 1rem;
+  }
+  .panel + .panel { border-left: 1px solid var(--border); }
+  .panel-title { font-size: .68rem; letter-spacing: .12em; text-transform: uppercase;
+    font-weight: 700; color: var(--mid); }
+
+  .bullet-list { list-style: none; display: flex; flex-direction: column; gap: .5rem; }
+  .bullet-list li {
+    padding-left: 1.25rem; position: relative;
+    font-size: .84rem; color: var(--slate); line-height: 1.48;
+  }
+  .bullet-list li::before { content: '▸'; position: absolute; left: 0;
+    color: var(--mid); font-size: .7rem; top: .16em; }
+  .bullet-list li strong { color: var(--navy); }
+  .bullet-list li.good::before { color: var(--green); }
+  .bullet-list li.n8n::before { color: var(--n8n); }
+  .bullet-list li.bad::before { color: var(--red); }
+
+  .verdict {
+    background: var(--n8n-bg); border: 1px solid var(--n8n-bd); border-radius: 8px;
+    padding: .8rem 1.1rem; font-size: .84rem; font-weight: 600;
+    color: #8a1f3d; line-height: 1.45;
+  }
+  .guarantee {
+    background: var(--green-bg); border: 1px solid var(--green-bd);
+    border-radius: 8px; padding: .65rem .95rem;
+    font-size: .8rem; color: var(--green); font-weight: 600; line-height: 1.4;
+  }
+  .warn-box {
+    background: var(--amber-bg); border: 1px solid var(--amber-bd);
+    border-radius: 8px; padding: .65rem .95rem;
+    font-size: .8rem; color: var(--amber); font-weight: 600; line-height: 1.4;
+  }
+
+  /* Global slide body */
+  .slide-body {
+    flex: 1; display: flex; flex-direction: column;
+    background: var(--off-wh); overflow: hidden;
+  }
+
+  /* Title / Thanks / section-divider slides */
+  #s-title .slide-body, #s-thanks .slide-body,
+  .divider .slide-body {
+    flex: 1; background: var(--navy-dk);
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    position: relative; overflow: hidden;
+  }
+  #s-title .slide-body::before, #s-thanks .slide-body::before,
+  .divider .slide-body::before {
+    content: ''; position: absolute; inset: 0;
+    background:
+      radial-gradient(ellipse 70% 55% at 78% 45%, rgba(234,75,113,.22) 0%, transparent 65%),
+      radial-gradient(ellipse 50% 75% at 18% 75%, rgba(255,255,255,.04) 0%, transparent 60%);
+  }
+  .title-tag  { font-size: .7rem; letter-spacing: .2em; text-transform: uppercase;
+    color: var(--n8n-lt); margin-bottom: 1rem; z-index: 1; }
+  .title-main { font-size: 2.7rem; font-weight: 800; color: #fff;
+    line-height: 1.12; text-align: center; z-index: 1; }
+  .title-main em { color: var(--n8n-lt); font-style: normal; }
+  .title-sub  { margin-top: 1rem; font-size: 1.02rem; color: rgba(255,255,255,.55);
+    text-align: center; z-index: 1; max-width: 640px; line-height: 1.5; }
+  .title-author { margin-top: 1.8rem; z-index: 1;
+    background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.16);
+    border-radius: 9999px; padding: .45rem 1.3rem; color: #fff; font-size: .88rem; }
+  .title-github { margin-top: .9rem; font-size: .77rem; color: rgba(255,255,255,.35); z-index: 1; }
+  .title-github a { color: var(--n8n-lt); text-decoration: none; }
+
+  /* Section-divider slides */
+  .section-tag  { font-size: .7rem; letter-spacing: .25em; text-transform: uppercase;
+    color: rgba(255,255,255,.4); margin-bottom: 1.1rem; z-index: 1; }
+  .section-main { font-size: 4.2rem; font-weight: 900; color: var(--n8n-lt);
+    line-height: 1; text-align: center; z-index: 1; letter-spacing: -.02em; }
+  .section-hint { margin-top: 1.4rem; font-size: 1rem; color: rgba(255,255,255,.45);
+    text-align: center; z-index: 1; max-width: 720px; padding: 0 2rem; }
+
+  /* Op-table (API endpoints, ladder) */
+  .op-table-body { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
+  .op-grid { flex: 1; display: grid; grid-template-columns: 1fr 1fr 1fr; }
+  .op-cell {
+    padding: 1.3rem 1.6rem; border-right: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    display: flex; flex-direction: column; justify-content: center; gap: .6rem;
+  }
+  .op-cell:nth-child(3n) { border-right: none; }
+  .op-step { font-size: .62rem; letter-spacing: .15em; text-transform: uppercase;
+    color: var(--n8n); font-weight: 700; }
+  .op-name  { font-family: 'Consolas', monospace; font-weight: 700;
+    font-size: .92rem; color: var(--navy); }
+  .op-desc  { font-size: .76rem; color: var(--mid); line-height: 1.45; }
+
+  .op-grid.small .op-cell { padding: .9rem 1.3rem; gap: .35rem; }
+  .op-grid.small .op-name { font-size: .82rem; }
+  .op-grid.small .op-desc { font-size: .7rem; }
+
+  /* Architecture stack diagram */
+  .arch-body { flex: 1; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; padding: 1.5rem 2.5rem; gap: 0; overflow: hidden; }
+  .core-box {
+    width: 78%; max-width: 640px;
+    background: var(--navy); border-radius: 10px; padding: 1rem 1.4rem;
+    text-align: center; box-shadow: 0 4px 16px rgba(0,0,0,.15);
+  }
+  .core-title { font-size: .65rem; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--n8n-lt); font-weight: 700; margin-bottom: .5rem; }
+  .core-items { font-size: .78rem; color: rgba(255,255,255,.8); line-height: 1.6; }
+  .core-items code { color: var(--n8n-lt); font-family: 'Consolas', monospace; }
+  .arch-connector { width: 2px; height: 26px; background: var(--border); }
+  .layers-row { display: flex; gap: 1.1rem; width: 90%; max-width: 780px; justify-content: center; }
+  .layer-box {
+    flex: 1; max-width: 230px; border: 1px solid var(--border); border-radius: 8px;
+    background: #fff; padding: .9rem 1rem; text-align: center;
+    display: flex; flex-direction: column; gap: .3rem;
+  }
+  .layer-box.now {
+    border-color: var(--n8n); background: var(--n8n-bg);
+    box-shadow: 0 3px 10px rgba(234,75,113,.18);
+  }
+  .layer-name { font-size: .85rem; font-weight: 700; color: var(--navy); }
+  .layer-box.now .layer-name { color: var(--n8n); }
+  .layer-desc { font-size: .68rem; color: var(--mid); line-height: 1.4; }
+  .layer-tag { font-size: .6rem; letter-spacing: .08em; text-transform: uppercase; color: var(--mid); }
+  .layer-box.now .layer-tag { color: var(--n8n); font-weight: 700; }
+  .connectors-row { display: flex; width: 90%; max-width: 780px; justify-content: center;
+    gap: 1.1rem; margin: .2rem 0; }
+  .connectors-row .stem { flex: 1; max-width: 230px; display: flex; justify-content: center; }
+  .connectors-row .stem::before { content:''; width: 2px; height: 18px; background: var(--border); }
+
+  /* Takeaway (standalone bullet) slides */
+  .takeaway-body { flex: 1; display: flex; align-items: center; justify-content: center;
+    padding: 1.5rem 3rem; overflow: hidden; }
+  .takeaway-list { list-style: none; display: flex; flex-direction: column; gap: 1rem; max-width: 760px; }
+  .takeaway-list li {
+    padding-left: 2.2rem; position: relative;
+    font-size: 1.02rem; color: var(--slate); line-height: 1.48;
+  }
+  .takeaway-list li strong { color: var(--navy); }
+  .takeaway-list li::before {
+    content: '✓'; position: absolute; left: 0; top: -.05em;
+    width: 1.6rem; height: 1.6rem; border-radius: 50%;
+    background: var(--green-bg); color: var(--green); border: 1px solid var(--green-bd);
+    display: flex; align-items: center; justify-content: center; font-size: .85rem; font-weight: 700;
+  }
+
+  /* ── Node-graph figure ─────────────────────────────────────────────── */
+  .graph-body {
+    flex: 1; position: relative; overflow: hidden;
+    padding: .9rem 2.2rem 1rem; display: flex; flex-direction: column;
+    gap: .8rem; align-items: center; justify-content: center;
+  }
+  .g-row { display: flex; gap: .8rem; justify-content: center; align-items: flex-start; width: 100%; }
+  .gnode {
+    border-radius: 7px; padding: .38rem .7rem; text-align: center;
+    font-size: .68rem; font-weight: 700; color: #fff;
+    box-shadow: 0 2px 6px rgba(0,0,0,.12); white-space: nowrap;
+    border: 1px solid transparent;
+  }
+  .gnode .gk { display: block; font-size: .54rem; font-weight: 700; letter-spacing: .08em;
+    text-transform: uppercase; opacity: .75; margin-bottom: .1rem; }
+  .gnode.trigger { background: var(--n8n); }
+  .gnode.http    { background: var(--navy); }
+  .gnode.logic   { background: var(--logic); }
+  .gnode.wait    { background: var(--wait); }
+  .gnode.stop    { background: var(--red); }
+  .gnode.noop    { background: var(--green); }
+  .gnode.hub     { background: var(--navy-dk); border-color: var(--n8n); box-shadow: 0 0 0 3px var(--n8n-bg), 0 2px 6px rgba(0,0,0,.12); }
+
+  .g-down { font-size: .8rem; color: var(--border); line-height: 1; text-align: center; width: 100%; }
+  .g-branch-labels { display: flex; gap: .8rem; justify-content: center; width: 100%; }
+  .branch-chip {
+    font-size: .58rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+    color: var(--n8n); background: var(--n8n-bg); border: 1px solid var(--n8n-bd);
+    border-radius: 9999px; padding: .08rem .5rem; text-align: center; min-width: 88px;
+  }
+  .g-col { display: flex; flex-direction: column; align-items: center; gap: .3rem; min-width: 92px; }
+  .loopback {
+    font-size: .58rem; font-weight: 700; color: var(--n8n); background: #fff;
+    border: 1px dashed var(--n8n-bd); border-radius: 6px; padding: .18rem .45rem;
+    white-space: nowrap;
+  }
+  .tf-row { display: flex; gap: .5rem; justify-content: center; }
+  .tf-chip { font-size: .56rem; font-weight: 700; padding: .05rem .4rem; border-radius: 5px; }
+  .tf-chip.t { background: var(--green-bg); color: var(--green); border: 1px solid var(--green-bd); }
+  .tf-chip.f { background: var(--red-bg); color: var(--red); border: 1px solid var(--red-bd); }
+
+  .cycle-svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+  .cycle-path {
+    fill: none; stroke: var(--n8n); stroke-width: 3;
+    stroke-linecap: round; stroke-dasharray: 10 8;
+    animation: dashflow 1.1s linear infinite;
+    opacity: .85;
+  }
+  @keyframes dashflow { to { stroke-dashoffset: -36; } }
+  .cycle-caption {
+    position: absolute; right: 2.3rem; top: .95rem;
+    background: var(--n8n); color: #fff; font-size: .62rem; font-weight: 700;
+    letter-spacing: .06em; text-transform: uppercase;
+    padding: .28rem .7rem; border-radius: 9999px; box-shadow: 0 3px 10px rgba(234,75,113,.35);
+    z-index: 2;
+  }
+
+  /* ── Coverage strip ──────────────────────────────────────────────────── */
+  .strip-block { display: flex; flex-direction: column; gap: .35rem; align-items: center; }
+  .strip-caption { font-size: .72rem; color: var(--mid); font-weight: 600; }
+  .strip-caption strong { color: var(--navy); }
+  .strip { display: flex; gap: .3rem; }
+  .tick { width: 1.7rem; height: 1.7rem; border-radius: 5px; border: 1px solid transparent; }
+  .tick.u  { background: #e2e8f0; border-color: #cbd5e1; }
+  .tick.ok { background: var(--green-bg); border-color: var(--green-bd); }
+  .tick.low{ background: var(--amber-bg); border-color: var(--amber-bd); }
+  .tick.re { background: var(--green); border-color: var(--green); box-shadow: 0 0 0 2px var(--green-bg) inset; }
+  .strip-legend { display: flex; gap: 1.2rem; font-size: .68rem; color: var(--mid); align-items: center; }
+  .strip-legend .sw { display: inline-flex; align-items: center; gap: .35rem; }
+  .strip-legend .sw span.chip { width: .8rem; height: .8rem; border-radius: 3px; display: inline-block; }
+
+  /* ── Comparison grid ─────────────────────────────────────────────────── */
+  .cmp-grid {
+    flex: 1; display: grid; grid-template-columns: 1.1fr 1fr 1fr;
+    overflow: hidden;
+  }
+  .cmp-head, .cmp-cell {
+    padding: .8rem 1.3rem; border-bottom: 1px solid var(--border); border-right: 1px solid var(--border);
+    font-size: .78rem; color: var(--slate); line-height: 1.45;
+  }
+  .cmp-head { background: var(--navy); color: #fff; font-weight: 700; font-size: .68rem;
+    letter-spacing: .08em; text-transform: uppercase; display: flex; align-items: center; }
+  .cmp-grid > *:nth-child(3n) { border-right: none; }
+  .cmp-cell.hi { background: var(--n8n-bg); font-weight: 600; color: #8a1f3d; }
+  .cmp-cell .lbl { font-weight: 700; color: var(--navy); }
+
+  /* ── JSON card ────────────────────────────────────────────────────────── */
+  .json-card {
+    background: var(--navy-dk); border-radius: 9px; padding: .9rem 1.2rem;
+    font-family: 'Consolas', monospace; font-size: .74rem; line-height: 1.6;
+    color: #cfe0f2; box-shadow: 0 4px 14px rgba(0,0,0,.2);
+  }
+  .json-card .k { color: var(--n8n-lt); }
+  .json-card .v { color: #a8e6c1; }
+  .json-card .p { color: rgba(255,255,255,.35); }
+
+  /* ── Fault grid ───────────────────────────────────────────────────────── */
+  .fault-body { flex: 1; overflow: hidden; padding: .9rem 2rem; display: flex; flex-direction: column; }
+  .fault-grid { flex: 1; display: grid; grid-template-columns: 1.1fr 1.3fr 1.5fr; grid-auto-rows: 1fr; }
+  .fault-head { background: var(--navy); color: #fff; font-size: .62rem; font-weight: 700;
+    letter-spacing: .1em; text-transform: uppercase; padding: .5rem 1rem; display: flex; align-items: center; }
+  .fault-cell { padding: .7rem 1rem; border-bottom: 1px solid var(--border); border-right: 1px solid var(--border);
+    font-size: .74rem; color: var(--slate); line-height: 1.4; }
+  .fault-grid > *:nth-child(3n) { border-right: none; }
+  .fault-cell.hi { background: var(--n8n-bg); }
+  .fault-cell code { font-family: 'Consolas', monospace; color: var(--navy); font-weight: 700; }
+
+  /* ── Outcome cards (assess) ──────────────────────────────────────────── */
+  .outcome-body { flex: 1; display: flex; align-items: center; justify-content: center;
+    gap: 1.2rem; padding: 1rem 2rem; overflow: hidden; }
+  .outcome-card {
+    flex: 1; max-width: 340px; border-radius: 10px; padding: 1.1rem 1.2rem;
+    display: flex; flex-direction: column; gap: .5rem; border: 1px solid var(--border);
+    background: #fff; box-shadow: 0 3px 10px rgba(0,0,0,.06);
+  }
+  .outcome-card.exhausted { border-color: var(--amber-bd); background: var(--amber-bg); }
+  .outcome-card.converged { border-color: var(--green-bd); background: var(--green-bg); }
+  .outcome-title { font-size: .92rem; font-weight: 800; color: var(--navy); }
+  .outcome-card.converged .outcome-title { color: var(--green); }
+  .outcome-card.exhausted .outcome-title { color: var(--amber); }
+  .outcome-desc { font-size: .78rem; color: var(--slate); line-height: 1.5; }
+  .outcome-code { font-family: 'Consolas', monospace; font-size: .68rem; color: var(--mid); }
+
+  /* Progress & nav */
+  #progress-bar { position: fixed; bottom: 0; left: 0; height: 3px;
+    background: var(--n8n); transition: width .35s ease; z-index: 9999; }
+  #nav-hint { position: fixed; bottom: 7px; right: 13px; font-size: .65rem;
+    color: rgba(255,255,255,.18); letter-spacing: .07em; z-index: 9999; pointer-events: none; }
+</style>
+</head>
+<body>
+<div id="deck">
+
+<!-- ═══════════════════ SLIDE 1 — TITLE ══════════════════════════════ -->
+<div class="slide active" id="s-title">
+  <div class="slide-header">
+    <div class="logo">
+      <div class="logo-mark">Rx</div>
+      <div><strong>Same Scan, No Python — Orchestrating the Guarded Tomography Scan with n8n</strong></div>
+    </div>
+    <div class="slide-num">1 / 18</div>
+  </div>
+  <div class="slide-body">
+    <div class="title-tag">rx-controls-suite &middot; n8n Orchestration</div>
+    <div class="title-main">
+      Same Scan.<br><em>No Python At All.</em>
+    </div>
+    <div class="title-sub">The same reactive pipeline, driven this time by a visual node graph
+      with no in-process Python step &mdash; a genuinely different problem, and the findings
+      it forces into the open.</div>
+    <div class="title-author">Igor Khokhriakov &nbsp;&middot;&nbsp; Principal Software Engineer</div>
+    <div class="title-github">
+      <a href="https://github.com/scientific-software-hub/rx-controls-suite">github.com/scientific-software-hub/rx-controls-suite</a>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ SLIDE 2 — THE LADDER ═════════════════════════ -->
+<div class="slide" id="s-ladder">
+  <div class="slide-header">
+    <div class="logo">
+      <div class="logo-mark">Rx</div>
+      <div><strong>Same Scan, No Python</strong></div>
+    </div>
+    <div class="slide-num">2 / 18</div>
+  </div>
+  <div class="slide-body">
+    <div class="section-strip">
+      <span class="section-num">00 &middot; The Ladder</span>
+      <span class="section-title">A Deliberately Harder Question Each Rung</span>
+      <span class="section-sub">Stress-testing one claim from three directions</span>
+    </div>
+    <div class="two-col">
+      <div class="panel">
+        <div class="panel-title">The claim under test</div>
+        <p style="font-size:.86rem;color:var(--slate);line-height:1.6;">
+          <code style="font-family:'Consolas',monospace;">rx-controls-suite</code> doesn't compete
+          with orchestrators &mdash; it feeds them. Bluesky, Prefect and n8n each try to break that
+          claim from a different angle, and each reports what actually broke.
+        </p>
+      </div>
+      <div class="panel">
+        <ul class="bullet-list">
+          <li class="good"><strong>Bluesky</strong> &mdash; easy: Python, scientific, already
+            loop-based. The rx pipeline drops straight into ophyd-shaped devices.</li>
+          <li class="n8n"><strong>Prefect</strong> &mdash; harder: Python, but no scientific
+            assumptions. The scan has to explain itself to a general-purpose task graph.</li>
+          <li class="bad"><strong>n8n</strong> &mdash; hardest: not Python at all. This talk.</li>
+        </ul>
+      </div>
+    </div>
+    <div style="padding: 0 1.7rem 1.2rem;">
+      <div class="verdict">Same core, same safety gates, same HDF5 file every time. What changes
+        is how much of the orchestrator can hold Python state &mdash; and n8n holds none.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ SLIDE 3 — PRIMER ═════════════════════════════ -->
+<div class="slide" id="s-primer">
+  <div class="slide-header">
+    <div class="logo">
+      <div class="logo-mark">Rx</div>
+      <div><strong>Same Scan, No Python</strong></div>
+    </div>
+    <div class="slide-num">3 / 18</div>
+  </div>
+  <div class="slide-body">
+    <div class="section-strip">
+      <span class="section-num">01 &middot; What Is n8n</span>
+      <span class="section-title">Five Words You'll See In Every Screenshot</span>
+      <span class="section-sub">A vocabulary primer &mdash; same shape as the Prefect talk's</span>
+    </div>
+    <div class="two-col">
+      <div class="panel">
+        <ul class="bullet-list">
+          <li><strong>Workflow</strong> &mdash; the node graph. Here: the guarded tomography
+            scan, drawn as boxes and arrows instead of a Python function.</li>
+          <li><strong>Node</strong> &mdash; one step: a form, an HTTP request, a Switch, a Wait.</li>
+          <li><strong>Execution</strong> &mdash; one run of the workflow, with its own log of
+            every node's input and output JSON.</li>
+          <li><strong>Form Trigger</strong> &mdash; a web form that starts an execution; no API
+            client required to launch a scan.</li>
+          <li><strong>Wait</strong> &mdash; a node that parks the execution until a webhook
+            call resumes it &mdash; how this workflow survives a beam-loss pause.</li>
+        </ul>
+      </div>
+      <div class="panel">
+        <div class="panel-title">Compare to Prefect</div>
+        <p style="font-size:.82rem;color:var(--mid);line-height:1.55;">Flow/Task/Run/Artifact/State
+          all assumed a Python process underneath. Workflow/Node/Execution assume nothing &mdash;
+          every node is just an HTTP call in and a JSON blob out.</p>
+        <div class="panel-title" style="margin-top:.4rem;">What that costs</div>
+        <p style="font-size:.82rem;color:var(--mid);line-height:1.55;">No shared Python objects
+          between steps. Whatever state the scan needs has to live somewhere else &mdash; see
+          slide 6.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ SLIDE 4 — WHAT BROKE ═════════════════════════ -->
+<div class="slide" id="s-break">
+  <div class="slide-header">
+    <div class="logo">
+      <div class="logo-mark">Rx</div>
+      <div><strong>Same Scan, No Python</strong></div>
+    </div>
+    <div class="slide-num">4 / 18</div>
+  </div>
+  <div class="slide-body">
+    <div class="section-strip">
+      <span class="section-num">01 &middot; What Is n8n</span>
+      <span class="section-title">Why n8n Gets A Different Treatment</span>
+      <span class="section-sub">Not a re-skin of the Prefect flow</span>
+    </div>
+    <div class="two-col">
+      <div class="panel">
+        <div class="panel-title">The obstacle</div>
+        <ul class="bullet-list">
+          <li class="bad">n8n has <strong>no in-process Python step</strong> for this stack.</li>
+          <li>n8n 2.0 didn't leave Python behind &mdash; it replaced the legacy Pyodide Code
+            node with native Python on <strong>external task runners</strong>.</li>
+          <li>A task-runner sandbox is still not where you run a live caproto
+            <code style="font-family:'Consolas',monospace;">Context</code> and an rxtango event
+            loop against a real beamline.</li>
+        </ul>
+      </div>
+      <div class="panel">
+        <div class="panel-title">The fix</div>
+        <ul class="bullet-list">
+          <li class="good">The rx scan is exposed as an <strong>HTTP+SSE service</strong>
+            (<code style="font-family:'Consolas',monospace;">scan_service.py</code>, <code style="font-family:'Consolas',monospace;">:8030</code>).</li>
+          <li class="good">n8n's visual node graph becomes the orchestration &mdash; every step
+            a plain HTTP call against that service.</li>
+        </ul>
+      </div>
+    </div>
+    <div style="padding: 0 1.7rem 1.2rem;">
+      <div class="verdict">This isn't a workaround bolted on to make n8n fit. It's what turning
+        an experiment into a REST-addressable resource actually requires &mdash; and the rest of
+        this talk is about what that trade buys and costs.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ SLIDE 5 — ARCHITECTURE ═══════════════════════ -->
+<div class="slide" id="s-arch">
+  <div class="slide-header">
+    <div class="logo">
+      <div class="logo-mark">Rx</div>
+      <div><strong>Same Scan, No Python</strong></div>
+    </div>
+    <div class="slide-num">5 / 18</div>
+  </div>
+  <div class="slide-body">
+    <div class="section-strip">
+      <span class="section-num">02 &middot; Architecture</span>
+      <span class="section-title">One Reused Core. A Service In Between.</span>
+      <span class="section-sub">Same core as Prefect's talk, one more layer</span>
+    </div>
+    <div class="arch-body">
+      <div class="layers-row">
+        <div class="layer-box"><div class="layer-tag">Reused, Unchanged</div><div class="layer-name">scan_core.py</div>
+          <div class="layer-desc">sweeps &middot; ScanEvent stream &middot; tier-2 watchdog &middot; drain</div></div>
+        <div class="layer-box"><div class="layer-tag">New For n8n</div><div class="layer-name">refine.py + rx_n8n.py</div>
+          <div class="layer-desc">quality ledger &middot; 3 adapters</div></div>
+        <div class="layer-box now"><div class="layer-tag">This Talk</div><div class="layer-name">scan_service.py :8030</div>
+          <div class="layer-desc">FastAPI &mdash; owns the session &amp; the cursor</div></div>
+      </div>
+      <div class="connectors-row"><div class="stem"></div><div class="stem"></div><div class="stem"></div></div>
+      <div class="core-box">
+        <div class="core-title">n8n &middot; :9000 &mdash; the node graph, driving the service by HTTP</div>
+        <div class="core-items">
+          Form Trigger starts a scan &middot; <code>Switch</code> routes the cursor's
+          <code>action</code> &middot; <code>Wait</code> parks on beam loss, resumed by webhook
+        </div>
+      </div>
+    </div>
+    <div style="padding: 0 1.7rem 1.2rem;">
+      <div class="verdict"><code style="font-family:'Consolas',monospace;">scan_core.py</code>
+        imports nothing from n8n or Prefect. Only the two layers above it are new.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ SLIDE 6 — THE SESSION ════════════════════════ -->
+<div class="slide" id="s-session">
+  <div class="slide-header">
+    <div class="logo">
+      <div class="logo-mark">Rx</div>
+      <div><strong>Same Scan, No Python</strong></div>
+    </div>
+    <div class="slide-num">6 / 18</div>
+  </div>
+  <div class="slide-body">
+    <div class="section-strip">
+      <span class="section-num">02 &middot; Architecture</span>
+      <span class="section-title">The Cost And The Buy</span>
+      <span class="section-sub">What turning an experiment into a REST resource actually trades</span>
+    </div>
+    <div class="two-col">
+      <div class="panel">
+        <div class="panel-title">Prefect could just pass objects</div>
+        <p style="font-size:.82rem;color:var(--slate);line-height:1.55;">
+          <code style="font-family:'Consolas',monospace;">RxLoop</code>, the caproto
+          <code style="font-family:'Consolas',monospace;">Context</code>, the shared
+          <code style="font-family:'Consolas',monospace;">health</code> observable, the open
+          <code style="font-family:'Consolas',monospace;">ScanRun</code>, the sweep cursor &mdash;
+          plain Python objects, passed between <code style="font-family:'Consolas',monospace;">persist_result=False</code>
+          tasks in one process.
+        </p>
+      </div>
+      <div class="panel">
+        <div class="panel-title">n8n can't</div>
+        <p style="font-size:.82rem;color:var(--slate);line-height:1.55;">
+          Every step is a separate HTTP call. That state has to become a
+          <strong>server-side session</strong> (<code style="font-family:'Consolas',monospace;">ScanSession</code>
+          in <code style="font-family:'Consolas',monospace;">scan_service.py</code>) &mdash; n8n
+          is left holding only control flow.
+        </p>
+      </div>
+    </div>
+    <div style="padding: 0 1.7rem 1.2rem;">
+      <div class="verdict">Not a workaround &mdash; the cost of making the experiment a resource.
+        The buy: any HTTP client can now drive or observe it, not just this one node graph.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ SLIDE 7 — THE API ════════════════════════════ -->
+<div class="slide" id="s-api">
+  <div class="slide-header">
+    <div class="logo">
+      <div class="logo-mark">Rx</div>
+      <div><strong>Same Scan, No Python</strong></div>
+    </div>
+    <div class="slide-num">7 / 18</div>
+  </div>
+  <div class="slide-body">
+    <div class="section-strip">
+      <span class="section-num">02 &middot; Architecture</span>
+      <span class="section-title">The Whole Surface, Nine Endpoints</span>
+      <span class="section-sub">scan_service.py &mdash; everything n8n calls</span>
+    </div>
+    <div class="op-table-body">
+      <div class="op-grid small">
+        <div class="op-cell"><div class="op-step">Lifecycle</div><div class="op-name">POST /scan</div>
+          <div class="op-desc">Opens the session, arms the beamline, starts the shutter supervisor.</div></div>
+        <div class="op-cell"><div class="op-step">Cursor</div><div class="op-name">POST /scan/{id}/next</div>
+          <div class="op-desc">The one decision node &mdash; returns what to do next.</div></div>
+        <div class="op-cell"><div class="op-step">Acquire</div><div class="op-name">POST /scan/{id}/sweep</div>
+          <div class="op-desc">Runs one pass-1 sweep to completion or a watchdog pause.</div></div>
+        <div class="op-cell"><div class="op-step">Acquire</div><div class="op-name">POST /scan/{id}/refine</div>
+          <div class="op-desc">Re-acquires exactly the LOW-quality indices queued by /assess.</div></div>
+        <div class="op-cell"><div class="op-step">Recovery</div><div class="op-name">POST /scan/{id}/wait-healthy</div>
+          <div class="op-desc">Arms the beam-recovery webhook, returns 202 immediately.</div></div>
+        <div class="op-cell"><div class="op-step">Decision</div><div class="op-name">POST /scan/{id}/assess</div>
+          <div class="op-desc">Runs <code>refine.py::assess</code> &mdash; converged, refine, or exhausted.</div></div>
+        <div class="op-cell"><div class="op-step">Lifecycle</div><div class="op-name">POST /scan/{id}/finalize</div>
+          <div class="op-desc">Always runs &mdash; closes the HDF5 file, writes the summary.</div></div>
+        <div class="op-cell"><div class="op-step">Test rig</div><div class="op-name">POST /sim/fault</div>
+          <div class="op-desc">Injects a scenario &mdash; same call the "Inject Fault" form makes.</div></div>
+        <div class="op-cell"><div class="op-step">Live view</div><div class="op-name">GET /events</div>
+          <div class="op-desc">SSE, per frame &mdash; the continuous feed n8n's own log can't give.</div></div>
+      </div>
+    </div>
+    <div style="padding: 0 1.7rem 1rem;">
+      <div class="guarantee"><code style="font-family:'Consolas',monospace;">/sweep</code> and
+        <code style="font-family:'Consolas',monospace;">/refine</code> are sync <code style="font-family:'Consolas',monospace;">def</code>
+        endpoints so they can block inside <code style="font-family:'Consolas',monospace;">drain</code> &mdash;
+        the same rx-loop-thread boundary the Prefect talk covered, just crossed by FastAPI's
+        threadpool instead of a Prefect task.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ SLIDE 8 — DIVIDER: THE NODE GRAPH ═══════════ -->
+<div class="slide divider" id="s-div1">
+  <div class="slide-header">
+    <div class="logo">
+      <div class="logo-mark">Rx</div>
+      <div><strong>Same Scan, No Python</strong></div>
+    </div>
+    <div class="slide-num">8 / 18</div>
+  </div>
+  <div class="slide-body">
+    <div class="section-tag">Part Two</div>
+    <div class="section-main">The Node Graph</div>
+    <div class="section-hint">Fifteen nodes, one Switch, one loop back to the cursor</div>
+  </div>
+</div>
+
+<!-- ═══════════════════ SLIDE 9 — THE GRAPH ══════════════════════════ -->
+<div class="slide" id="s-graph">
+  <div class="slide-header">
+    <div class="logo">
+      <div class="logo-mark">Rx</div>
+      <div><strong>The Node Graph</strong></div>
+    </div>
+    <div class="slide-num">9 / 18</div>
+  </div>
+  <div class="slide-body">
+    <div class="section-strip">
+      <span class="section-num">03 &middot; The Graph &middot; 1 of 2</span>
+      <span class="section-title">Guarded Tomography Scan.json</span>
+      <span class="section-sub">Every node, exactly as it ships</span>
+    </div>
+    <div class="graph-body">
+      <svg class="cycle-svg" id="cycle-svg">
+        <defs>
+          <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="10" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="var(--n8n)"/>
+          </marker>
+        </defs>
+        <path class="cycle-path" id="cycle-path" marker-end="url(#arrow)" d="" />
+      </svg>
+      <div class="cycle-caption">↻ the refinement cycle &mdash; slide 12</div>
+
+      <div class="g-row">
+        <div class="gnode trigger"><span class="gk">Form Trigger</span>Experiment Form</div>
+      </div>
+      <div class="g-down">▾</div>
+      <div class="g-row">
+        <div class="gnode http"><span class="gk">HTTP</span>Create Scan</div>
+      </div>
+      <div class="g-down">▾</div>
+      <div class="g-row">
+        <div class="gnode hub" id="g-next"><span class="gk">HTTP &middot; cursor</span>Next</div>
+        <div class="gnode logic"><span class="gk">Switch</span>Route</div>
+      </div>
+      <div class="g-branch-labels">
+        <span class="branch-chip">sweep</span><span class="branch-chip">refine</span>
+        <span class="branch-chip">assess</span><span class="branch-chip">done</span>
+        <span class="branch-chip">abort</span>
+      </div>
+      <div class="g-row">
+        <div class="g-col"><div class="gnode http">Sweep</div></div>
+        <div class="g-col"><div class="gnode http">Refine</div></div>
+        <div class="g-col"><div class="gnode http" id="g-assess">Assess</div><div class="loopback">↩ Next</div></div>
+        <div class="g-col"><div class="gnode http">Finalize OK</div><div class="gnode noop">End OK</div></div>
+        <div class="g-col"><div class="gnode http">Finalize Aborted</div><div class="gnode stop">Interlock Stop</div></div>
+      </div>
+      <div class="g-row">
+        <div class="g-col" style="min-width:190px;">
+          <div class="gnode logic">IF &middot; Check Aborted</div>
+          <div class="tf-row">
+            <span class="tf-chip t">true → Finalize Aborted</span>
+            <span class="tf-chip f">false ↓</span>
+          </div>
+        </div>
+        <div class="g-col" style="min-width:220px;">
+          <div class="gnode logic">IF &middot; Check Watchdog</div>
+          <div class="tf-row">
+            <span class="tf-chip t">true → Arm Resume</span>
+            <span class="tf-chip f">false</span>
+          </div>
+          <div class="loopback">↩ Next</div>
+        </div>
+        <div class="g-col">
+          <div class="gnode http">Arm Resume</div>
+          <div class="gnode wait">Wait Beam</div>
+          <div class="loopback">↩ Next</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ SLIDE 10 — THE CURSOR ════════════════════════ -->
+<div class="slide" id="s-cursor">
+  <div class="slide-header">
+    <div class="logo">
+      <div class="logo-mark">Rx</div>
+      <div><strong>The Node Graph</strong></div>
+    </div>
+    <div class="slide-num">10 / 18</div>
+  </div>
+  <div class="slide-body">
+    <div class="section-strip">
+      <span class="section-num">03 &middot; The Graph &middot; 2 of 2</span>
+      <span class="section-title">The Service Owns The Cursor</span>
+      <span class="section-sub">One Switch collapses sweeps and refinement into one loop</span>
+    </div>
+    <div class="two-col">
+      <div class="panel">
+        <p style="font-size:.82rem;color:var(--slate);line-height:1.55;">
+          <code style="font-family:'Consolas',monospace;">/next</code> returns one decision, and
+          exactly one <code style="font-family:'Consolas',monospace;">Switch</code> node fans it
+          to five branches &mdash; sweeps and refinement iterations collapse into the same loop.
+        </p>
+        <div class="json-card">{<br>
+          &nbsp;&nbsp;<span class="k">"action"</span>: <span class="v">"sweep"</span>,<br>
+          &nbsp;&nbsp;<span class="k">"iteration"</span>: <span class="v">1</span>,<br>
+          &nbsp;&nbsp;<span class="k">"sweep_index"</span>: <span class="v">0</span>,<br>
+          &nbsp;&nbsp;<span class="k">"sweep_count"</span>: <span class="v">3</span>,<br>
+          &nbsp;&nbsp;<span class="k">"index_from"</span>: <span class="v">0</span>,<br>
+          &nbsp;&nbsp;<span class="k">"index_to"</span>: <span class="v">4</span>,<br>
+          &nbsp;&nbsp;<span class="k">"remaining"</span>: <span class="v">4</span>,<br>
+          &nbsp;&nbsp;<span class="k">"total"</span>: <span class="v">12</span><br>
+        }</div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">Why not Loop Over Items</div>
+        <p style="font-size:.82rem;color:var(--slate);line-height:1.55;">
+          n8n has a documented bug: a <strong>Wait-on-webhook</strong> node inside a
+          <code style="font-family:'Consolas',monospace;">Loop Over Items</code> gets its item
+          reprocessed on resume. One <code style="font-family:'Consolas',monospace;">Switch</code>
+          around a session-owned cursor sidesteps it entirely &mdash; there's no loop node to
+          re-enter, just a decision that gets asked again.
+        </p>
+        <div class="warn-box">This is a deliberate deviation from an earlier sketch that used a
+          <code style="font-family:'Consolas',monospace;">Loop Over Sweeps</code> node &mdash;
+          changed for exactly this reason.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ SLIDE 11 — DIVIDER: A CYCLE ══════════════════ -->
+<div class="slide divider" id="s-div2">
+  <div class="slide-header">
+    <div class="logo">
+      <div class="logo-mark">Rx</div>
+      <div><strong>Same Scan, No Python</strong></div>
+    </div>
+    <div class="slide-num">11 / 18</div>
+  </div>
+  <div class="slide-body">
+    <div class="section-tag">Part Three</div>
+    <div class="section-main">A Cycle, Not A DAG</div>
+    <div class="section-hint">The retry list doesn't exist until the measurement has happened</div>
+  </div>
+</div>
+
+<!-- ═══════════════════ SLIDE 12 — CYCLE VS LINE ═════════════════════ -->
+<div class="slide" id="s-cycle">
+  <div class="slide-header">
+    <div class="logo">
+      <div class="logo-mark">Rx</div>
+      <div><strong>A Cycle, Not A DAG</strong></div>
+    </div>
+    <div class="slide-num">12 / 18</div>
+  </div>
+  <div class="slide-body">
+    <div class="section-strip">
+      <span class="section-num">04 &middot; The Cycle &middot; 1 of 4</span>
+      <span class="section-title">Same Shape, One Structural Difference</span>
+      <span class="section-sub">A DAG can't express a decision that doesn't exist yet</span>
+    </div>
+    <div class="two-col">
+      <div class="panel">
+        <div class="panel-title"><span class="label label-navy">Prefect</span> A Straight Line</div>
+        <p style="font-size:.86rem;color:var(--slate);line-height:1.6;margin-bottom:.6rem;">
+          <code style="font-family:'Consolas',monospace;">prepare_beamline → run_sweep &times;3 →
+          finalize</code>
+        </p>
+        <ul class="bullet-list">
+          <li>Step count known <strong>before the first frame</strong> is acquired.</li>
+          <li>Beam loss pauses a step; it never adds one.</li>
+        </ul>
+      </div>
+      <div class="panel">
+        <div class="panel-title"><span class="label label-n8n">n8n</span> A Loop With A Back-Edge</div>
+        <p style="font-size:.86rem;color:var(--slate);line-height:1.6;margin-bottom:.6rem;">
+          <code style="font-family:'Consolas',monospace;">Assess → Next</code> re-enters the
+          Switch when quality is below target.
+        </p>
+        <ul class="bullet-list">
+          <li class="n8n">The retry list <strong>doesn't exist</strong> until the ring orbit has
+            been read at the moment each frame was taken.</li>
+          <li class="n8n">Iteration count is unknown at launch &mdash; bounded only by
+            <code style="font-family:'Consolas',monospace;">max_iterations</code>.</li>
+        </ul>
+      </div>
+    </div>
+    <div style="padding: 0 1.7rem 1.2rem;">
+      <div class="verdict">Tango says the orbit was out of spec at the instant a frame was taken
+        &mdash; that fact only exists after acquisition, so the graph that reacts to it can't be a
+        DAG with a fixed step count.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ SLIDE 13 — COVERAGE STRIP ════════════════════ -->
+<div class="slide" id="s-strip">
+  <div class="slide-header">
+    <div class="logo">
+      <div class="logo-mark">Rx</div>
+      <div><strong>A Cycle, Not A DAG</strong></div>
+    </div>
+    <div class="slide-num">13 / 18</div>
+  </div>
+  <div class="slide-body">
+    <div class="section-strip">
+      <span class="section-num">04 &middot; The Cycle &middot; 2 of 4</span>
+      <span class="section-title">What Iteration 2 Actually Fixes</span>
+      <span class="section-sub">The coverage strip &mdash; the dashboard's centerpiece</span>
+    </div>
+    <div class="takeaway-body" style="flex-direction:column; gap:1.6rem;">
+      <div class="strip-block">
+        <div class="strip-caption">Pass 1 complete &middot; <code style="font-family:'Consolas',monospace;">orbit_drift</code>
+          injected &middot; <strong>75%</strong> quality (9 / 12 OK)</div>
+        <div class="strip">
+          <div class="tick ok"></div><div class="tick ok"></div><div class="tick low"></div>
+          <div class="tick low"></div><div class="tick ok"></div><div class="tick ok"></div>
+          <div class="tick ok"></div><div class="tick low"></div><div class="tick ok"></div>
+          <div class="tick ok"></div><div class="tick ok"></div><div class="tick ok"></div>
+        </div>
+      </div>
+      <div style="font-size:1.4rem;color:var(--n8n);">↓ &nbsp;refine iteration 2 &nbsp;↓</div>
+      <div class="strip-block">
+        <div class="strip-caption">After refinement &middot; <strong>100%</strong> quality
+          (12 / 12 OK) &mdash; target was 90%</div>
+        <div class="strip">
+          <div class="tick ok"></div><div class="tick ok"></div><div class="tick re"></div>
+          <div class="tick re"></div><div class="tick ok"></div><div class="tick ok"></div>
+          <div class="tick ok"></div><div class="tick re"></div><div class="tick ok"></div>
+          <div class="tick ok"></div><div class="tick ok"></div><div class="tick ok"></div>
+        </div>
+      </div>
+      <div class="strip-legend">
+        <span class="sw"><span class="chip" style="background:#e2e8f0;"></span>unacquired</span>
+        <span class="sw"><span class="chip" style="background:var(--green-bg);border:1px solid var(--green-bd);"></span>OK</span>
+        <span class="sw"><span class="chip" style="background:var(--amber-bg);border:1px solid var(--amber-bd);"></span>LOW</span>
+        <span class="sw"><span class="chip" style="background:var(--green);"></span>re-acquired</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ SLIDE 14 — THREE OUTCOMES ════════════════════ -->
+<div class="slide" id="s-assess">
+  <div class="slide-header">
+    <div class="logo">
+      <div class="logo-mark">Rx</div>
+      <div><strong>A Cycle, Not A DAG</strong></div>
+    </div>
+    <div class="slide-num">14 / 18</div>
+  </div>
+  <div class="slide-body">
+    <div class="section-strip">
+      <span class="section-num">04 &middot; The Cycle &middot; 3 of 4</span>
+      <span class="section-title">Three Honest Outcomes, Not Two</span>
+      <span class="section-sub">refine.py :: assess</span>
+    </div>
+    <div class="outcome-body">
+      <div class="outcome-card converged">
+        <div class="outcome-title">Converged</div>
+        <div class="outcome-desc">All projections meet spec, or quality % &ge; target &mdash;
+          a few LOW frames are tolerable if the target allows it.</div>
+        <div class="outcome-code">stop=True, converged=True</div>
+      </div>
+      <div class="outcome-card">
+        <div class="outcome-title">Keep Refining</div>
+        <div class="outcome-desc">Below target, iterations remain &mdash; queue the LOW indices
+          and loop back through the Switch.</div>
+        <div class="outcome-code">stop=False, converged=False</div>
+      </div>
+      <div class="outcome-card exhausted">
+        <div class="outcome-title">Exhausted</div>
+        <div class="outcome-desc">Hit the iteration cap with the beam still out of spec &mdash;
+          reported honestly as <strong>not converged</strong>, never as a silent pass.</div>
+        <div class="outcome-code">stop=True, converged=False</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ SLIDE 15 — FIVE FAULTS ═══════════════════════ -->
+<div class="slide" id="s-faults">
+  <div class="slide-header">
+    <div class="logo">
+      <div class="logo-mark">Rx</div>
+      <div><strong>A Cycle, Not A DAG</strong></div>
+    </div>
+    <div class="slide-num">15 / 18</div>
+  </div>
+  <div class="slide-body">
+    <div class="section-strip">
+      <span class="section-num">04 &middot; The Cycle &middot; 4 of 4</span>
+      <span class="section-title">Five Fault Responses, Not Four</span>
+      <span class="section-sub">The fifth row is the reason this demo exists</span>
+    </div>
+    <div class="fault-body">
+      <div class="fault-grid">
+        <div class="fault-head">Injected</div><div class="fault-head">Handled By</div><div class="fault-head">Visible As</div>
+        <div class="fault-cell">brief beam dip</div>
+        <div class="fault-cell">rx tier-1 gate, unchanged</div>
+        <div class="fault-cell">nothing &mdash; absorbed silently, as today</div>
+        <div class="fault-cell">beam low &gt; watchdog_s</div>
+        <div class="fault-cell"><code>sustained_low</code> → <strong>Wait</strong> node</div>
+        <div class="fault-cell">execution <strong>Waiting</strong>, auto-resumed on beam recovery, sweep continues mid-projection</div>
+        <div class="fault-cell"><code>vacuum_burst</code></div>
+        <div class="fault-cell">interlock → <strong>Stop And Error</strong></div>
+        <div class="fault-cell">execution <strong>Error</strong>; shutter closed; partial HDF5</div>
+        <div class="fault-cell hi"><code>orbit_drift</code>, cleared</div>
+        <div class="fault-cell hi"><strong>the refinement loop</strong></div>
+        <div class="fault-cell hi">iteration 2 re-acquires LOW projections; quality % climbs to target</div>
+        <div class="fault-cell"><code>orbit_drift</code>, held</div>
+        <div class="fault-cell"><code>max_iterations</code> guard</div>
+        <div class="fault-cell">finishes <strong>not converged</strong> &mdash; not a crash, not a silent pass</div>
+      </div>
+      <div style="padding: .9rem 0 0;">
+        <div class="verdict">Row four is the one the Prefect flow has no equivalent for &mdash;
+          and the reason this demo exists.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ SLIDE 16 — SHORTER BRIDGE ════════════════════ -->
+<div class="slide" id="s-resume">
+  <div class="slide-header">
+    <div class="logo">
+      <div class="logo-mark">Rx</div>
+      <div><strong>Same Scan, No Python</strong></div>
+    </div>
+    <div class="slide-num">16 / 18</div>
+  </div>
+  <div class="slide-body">
+    <div class="section-strip">
+      <span class="section-num">05 &middot; The Bridge</span>
+      <span class="section-title">The Bridge Got Shorter, Not Just Different</span>
+      <span class="section-sub">rx_n8n.py &mdash; three adapters, not five</span>
+    </div>
+    <div class="cmp-grid">
+      <div class="cmp-head">Concern</div><div class="cmp-head">rx_prefect.py</div><div class="cmp-head">rx_n8n.py</div>
+      <div class="cmp-cell"><span class="lbl">Resuming a pause</span></div>
+      <div class="cmp-cell">Hops onto a private <code style="font-family:'Consolas',monospace;">ThreadPoolScheduler(1)</code>
+        first &mdash; <code style="font-family:'Consolas',monospace;">resume_flow_run</code>'s
+        <code style="font-family:'Consolas',monospace;">@async_dispatch</code> sniffs a running
+        loop and silently no-ops otherwise.</div>
+      <div class="cmp-cell hi">Plain <code style="font-family:'Consolas',monospace;">GET $execution.resumeUrl</code>
+        &mdash; no thread-local run context to respect, fired straight from
+        <code style="font-family:'Consolas',monospace;">on_next</code>.</div>
+      <div class="cmp-cell"><span class="lbl">Adapter count</span></div>
+      <div class="cmp-cell">5 &mdash; log_event, ProgressTracker, sweep_table, pause_until_healthy, drain</div>
+      <div class="cmp-cell hi">3 &mdash; event_json, EventHub, resume_on_healthy</div>
+      <div class="cmp-cell"><span class="lbl">Gotcha</span></div>
+      <div class="cmp-cell">async_dispatch's loop-detection trap &mdash; see the Prefect talk</div>
+      <div class="cmp-cell hi">The Wait node's restart hook answers <strong>GET</strong>, not
+        POST &mdash; a POST 404s with "no waiting webhook."</div>
+    </div>
+    <div style="padding: 0 1.7rem 1.2rem;">
+      <div class="verdict">The orchestrator boundary is an HTTP call, not an in-process SDK with
+        hidden context &mdash; that difference is a finding, not an implementation accident.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ SLIDE 17 — THE GAP ═══════════════════════════ -->
+<div class="slide" id="s-gap">
+  <div class="slide-header">
+    <div class="logo">
+      <div class="logo-mark">Rx</div>
+      <div><strong>Same Scan, No Python</strong></div>
+    </div>
+    <div class="slide-num">17 / 18</div>
+  </div>
+  <div class="slide-body">
+    <div class="section-strip">
+      <span class="section-num">06 &middot; The Live-Feedback Gap</span>
+      <span class="section-title">Stated Plainly, Not Hidden</span>
+      <span class="section-sub">What a general-purpose automation tool costs at a beamline</span>
+    </div>
+    <div class="two-col">
+      <div class="panel">
+        <div class="panel-title">The gap</div>
+        <ul class="bullet-list">
+          <li class="bad">n8n shows <strong>one JSON blob per node execution</strong>.</li>
+          <li class="good">Prefect showed a progress artifact updating <strong>twice a second</strong>.</li>
+          <li>Not a bug in this demo &mdash; the actual cost of choosing a general-purpose tool.</li>
+        </ul>
+      </div>
+      <div class="panel">
+        <div class="panel-title">So the continuous view comes from elsewhere</div>
+        <ul class="bullet-list">
+          <li class="n8n"><code style="font-family:'Consolas',monospace;">scan_service.py</code>
+            serves its own instrument-panel dashboard at <code style="font-family:'Consolas',monospace;">:8030</code>
+            &mdash; the coverage strip, loop/machine/beamline panels, a per-frame SSE log.</li>
+          <li class="good"><code style="font-family:'Consolas',monospace;">live_dashboard.py</code>
+            (<code style="font-family:'Consolas',monospace;">:8000</code>) tracks an n8n-driven
+            scan <strong>unchanged</strong> &mdash; it only ever read the
+            <code style="font-family:'Consolas',monospace;">TOMO:SCAN:*</code> PVs, which this
+            service writes exactly as the plain script did.</li>
+          <li class="good"><code style="font-family:'Consolas',monospace;">scan_report.ipynb</code>
+            opens the resulting HDF5 unchanged too &mdash; same compound dtype, same
+            <code style="font-family:'Consolas',monospace;">projections</code> dataset.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ SLIDE 18 — THANKS ════════════════════════════ -->
+<div class="slide" id="s-thanks">
+  <div class="slide-header">
+    <div class="logo">
+      <div class="logo-mark">Rx</div>
+      <div><strong>Same Scan, No Python</strong></div>
+    </div>
+    <div class="slide-num">18 / 18</div>
+  </div>
+  <div class="slide-body">
+    <div class="title-tag">Thank You</div>
+    <div class="title-main">Same Reactive Pipeline.<br><em>No Python Required To Drive It.</em></div>
+    <div style="margin-top:1.6rem;z-index:1;text-align:center;">
+      <a href="https://github.com/scientific-software-hub/rx-controls-suite" style="color:var(--n8n-lt);text-decoration:none;font-size:.95rem;font-weight:600;">github.com/scientific-software-hub/rx-controls-suite</a>
+    </div>
+    <div style="background:rgba(234,75,113,.14);border:1px solid rgba(234,75,113,.3);border-radius:10px;padding:.9rem 2rem;text-align:center;max-width:640px;margin-top:1.6rem;z-index:1;">
+      <div style="font-size:.65rem;letter-spacing:.18em;text-transform:uppercase;color:var(--n8n-lt);margin-bottom:.6rem;">Go deeper</div>
+      <div style="font-size:.8rem;color:rgba(255,255,255,.6);line-height:1.6;">
+        <code style="color:var(--n8n-lt);">demo/workflow-engines/README.md</code> &mdash; run it yourself<br>
+        <code style="color:var(--n8n-lt);">demo/workflow-engines/n8n_workflows/*.json</code> &mdash; both workflows, importable as-is
+      </div>
+    </div>
+  </div>
+</div>
+
+</div><!-- /deck -->
+<div id="progress-bar"></div>
+<div id="nav-hint">&larr; &rarr; navigate &nbsp;&middot;&nbsp; F fullscreen</div>
+
+<script>
+  // Draw the "refinement cycle" arc (Assess → Next) from the real, laid-out
+  // positions of the two nodes, in the graph-body's own pixel space — far
+  // more robust than hand-guessed viewBox coordinates against a flex layout.
+  (function () {
+    function drawCycle() {
+      const svg  = document.getElementById('cycle-svg');
+      const path = document.getElementById('cycle-path');
+      const box  = document.querySelector('.graph-body');
+      const from = document.getElementById('g-assess');
+      const to   = document.getElementById('g-next');
+      if (!svg || !path || !box || !from || !to) return;
+      const bb = box.getBoundingClientRect();
+      const fb = from.getBoundingClientRect();
+      const tb = to.getBoundingClientRect();
+      if (bb.width === 0 || bb.height === 0) return;   // not laid out yet
+      svg.setAttribute('viewBox', `0 0 ${bb.width} ${bb.height}`);
+      const x1 = fb.left + fb.width / 2 - bb.left, y1 = fb.bottom - bb.top;
+      const x2 = tb.left - bb.left,                 y2 = tb.top + tb.height / 2 - bb.top;
+      const reach = Math.max(90, (x1 - x2) * 0.55);
+      const d = `M ${x1} ${y1} C ${x1 + reach} ${y1 + 46}, ${x1 + reach} ${y2 - 14}, ${x2 - 16} ${y2}`;
+      path.setAttribute('d', d);
+    }
+    if (document.readyState === 'complete') drawCycle();
+    else window.addEventListener('load', drawCycle);
+    window.addEventListener('resize', drawCycle);
+  })();
+
+  const slides = Array.from(document.querySelectorAll('.slide'));
+  const total  = slides.length;
+  let   cur    = 0;
+
+  function show(n) {
+    slides[cur].classList.remove('active');
+    cur = (n + total) % total;
+    slides[cur].classList.add('active');
+    document.getElementById('progress-bar').style.width =
+      ((cur + 1) / total * 100) + '%';
+  }
+
+  document.addEventListener('keydown', e => {
+    if (['ArrowRight','ArrowDown',' '].includes(e.key)) { e.preventDefault(); show(cur + 1); }
+    if (['ArrowLeft','ArrowUp'].includes(e.key))        { e.preventDefault(); show(cur - 1); }
+    if (e.key === 'f' || e.key === 'F') {
+      if (!document.fullscreenElement) document.documentElement.requestFullscreen();
+      else document.exitFullscreen();
+    }
+  });
+
+  let tx = 0;
+  document.addEventListener('touchstart', e => { tx = e.touches[0].clientX; });
+  document.addEventListener('touchend',   e => {
+    const dx = e.changedTouches[0].clientX - tx;
+    if (dx < -40) show(cur + 1);
+    if (dx >  40) show(cur - 1);
+  });
+
+  show(0);
+</script>
+</body>
+</html>
