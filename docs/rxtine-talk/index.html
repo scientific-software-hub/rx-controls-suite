@@ -307,7 +307,7 @@
         <div class="code-wrap" style="flex:1;">
           <div class="code-label">Java · Single.zip()</div>
           <pre><code class="language-java">Flowable.interval(500, MILLISECONDS)
-  .flatMapSingle(tick -> Single.zip(
+  .concatMapSingle(tick -> Single.zip(
 
       // Both reads fire in parallel
       TineClient.read("/HERA/Magnets/QF1", "CURRENT")
@@ -382,7 +382,7 @@
           Math.abs(curr - prev) / prev < 0.1
   )
 
-  .flatMapSingle(
+  .concatMapSingle(   // two rapid deviations must not race two writes
       v -> TineClient.write(
           "/HERA/Beam/Corrector", "SETPOINT", v));</code></pre>
         </div>
@@ -534,7 +534,7 @@
   .buffer(5, 1)
   .map(w -> mean(w))
   .filter(v -> outOfRange(v))
-  .flatMapSingle(
+  .concatMapSingle(   // two rapid corrections must not race two writes
       v -> TineClient.write(
           "/HERA/Beam/Corrector",
           "SETPOINT", v))

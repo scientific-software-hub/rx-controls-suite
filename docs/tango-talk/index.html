@@ -419,7 +419,7 @@
         <div class="code-wrap" style="flex:1;">
           <div class="code-label">Java · Single.zip()</div>
           <pre><code class="language-java">Flowable.interval(500, MILLISECONDS)
-  .flatMapSingle(tick -> Single.zip(
+  .concatMapSingle(tick -> Single.zip(
 
       // Both reads fire in parallel
       read(device1, "current")
@@ -487,7 +487,7 @@
         <div class="code-wrap" style="flex:1;">
           <div class="code-label">Java · buffer + distinctUntilChanged</div>
           <pre><code class="language-java">Flowable.interval(50, MILLISECONDS)     // 20 Hz
-  .flatMapSingle(read(device, "double_scalar"))
+  .concatMapSingle(read(device, "double_scalar"))   // no dropped samples
 
   // Sliding window — no deque, no index arithmetic
   .buffer(5, 1)
@@ -499,7 +499,7 @@
           Math.abs(curr - prev) / prev < 0.1
   )
 
-  .flatMapSingle(write(device, "double_scalar_w"));</code></pre>
+  .concatMapSingle(write(device, "double_scalar_w"));  // writes stay ordered</code></pre>
         </div>
         <div class="guarantee">
           ✓ &nbsp;No daemon. No formula DSL. No deque.<br>
@@ -775,8 +775,9 @@
   // only act on out-of-range readings
   .filter(v -> outOfRange(v))
 
-  // issue correction command
-  .flatMapSingle(
+  // issue correction command — concatMapSingle, not flatMapSingle: two
+  // rapid corrections must not race two writes out of order
+  .concatMapSingle(
       write(magnet, "setpoint"));</code></pre>
         </div>
         <div class="arch-ex-desc">
@@ -833,7 +834,7 @@
             </div>
             <div class="demo-row star">
               <span class="alias">correlate ★</span>
-              <span class="desc"><strong>zip</strong> — guaranteed atomic pair</span>
+              <span class="desc"><strong>zip</strong> — pair only when both complete, never half-delivered</span>
             </div>
           </div>
         </div>

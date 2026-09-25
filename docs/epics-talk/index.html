@@ -420,7 +420,7 @@
           <pre><code class="language-python">rx.interval(
     timedelta(milliseconds=500), scheduler
 ).pipe(
-    ops.flat_map(
+    ops.concat_map(
         lambda _: rx.zip(
             # Both reads fire in parallel
             read_pv("BEAM:CURRENT",   ctx),
@@ -488,7 +488,7 @@
           <pre><code class="language-python">rx.interval(
     timedelta(milliseconds=50), scheduler   # 20 Hz
 ).pipe(
-    ops.flat_map(
+    ops.concat_map(   # no dropped samples
         lambda _: read_pv("BEAM:INTENSITY", ctx)),
 
     # sliding window — no deque, no index arithmetic
@@ -498,7 +498,7 @@
     # skip write if within 10% of last written value
     ops.distinct_until_changed(),
 
-    ops.flat_map(
+    ops.concat_map(   # writes stay ordered
         lambda v: write_pv("BEAM:SETPOINT", v, ctx))
 ).subscribe(
     on_next=log,
@@ -780,8 +780,9 @@
     # only act on out-of-range readings
     ops.filter(out_of_range),
 
-    # write correction back
-    ops.flat_map(
+    # write correction back — concat_map: two rapid corrections must not
+    # race two writes out of order
+    ops.concat_map(
         lambda v: write_pv(
             "MAGNET:SETPOINT", v, ctx))
 ).subscribe(on_next=apply, on_error=log)</code></pre>
@@ -839,7 +840,7 @@
             </div>
             <div class="demo-row star">
               <span class="alias">pv_correlate ★</span>
-              <span class="desc"><strong>zip</strong> — guaranteed atomic pair</span>
+              <span class="desc"><strong>zip</strong> — pair only when both complete, never half-delivered</span>
             </div>
           </div>
         </div>

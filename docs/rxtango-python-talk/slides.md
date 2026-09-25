@@ -35,7 +35,7 @@ If you know rx.zip in Python, you already know Single.zip in Java.
 | **Python** | **RxTango/python ✓** | RxEpics/python ✓ |
 
 All three use the **same operator vocabulary**:
-`zip · merge · buffer · scan · sample · flat_map`
+`zip · merge · buffer · scan · sample · concat_map`
 
 The only difference is the control-system call underneath.
 
@@ -71,7 +71,7 @@ and timing.
 ```python
 rx.interval(timedelta(milliseconds=500), scheduler=scheduler).pipe(
 
-    ops.flat_map(lambda _: rx.zip(
+    ops.concat_map(lambda _: rx.zip(
         # Both reads fire in parallel
         read_attribute(device1, "current"),
         read_attribute(device2, "beam_position"),
@@ -89,9 +89,14 @@ rx.interval(timedelta(milliseconds=500), scheduler=scheduler).pipe(
 
 ---
 Speaker notes:
-The code is identical in structure to the Java version — interval + flat_map + zip.
-Only the API names differ: Single.zip → rx.zip, flatMapSingle → flat_map.
-The operator contract is identical.
+The code is identical in structure to the Java version — interval + a serializing
+flatten + zip. The API names differ (Single.zip → rx.zip), and so does the flatten:
+Java's demo uses concatMapSingle, Python's uses concat_map — **not** flatMapSingle /
+flat_map. That's not a naming difference: an unbounded flat_map/flatMapSingle merges
+with no ordering guarantee, so under real latency the pairs could arrive out of tick
+order. concat_map/concatMapSingle serialize, which is what both languages actually
+need here — call this out if asked, it's the one place the two languages' code
+genuinely diverges beyond syntax.
 
 ---
 
@@ -117,7 +122,7 @@ each time.
 
 ```python
 rx.interval(timedelta(milliseconds=50), scheduler=scheduler).pipe(
-    ops.flat_map(lambda _: read_attribute(device, "double_scalar")),
+    ops.concat_map(lambda _: read_attribute(device, "double_scalar")),  # no dropped samples
 
     # Sliding window — no deque, no index arithmetic
     ops.buffer_with_count(count=5, skip=1),
@@ -128,7 +133,7 @@ rx.interval(timedelta(milliseconds=50), scheduler=scheduler).pipe(
         comparer=lambda prev, curr: abs(curr - prev) / (prev or 1e-9) < 0.1
     ),
 
-    ops.flat_map(lambda v: write_attribute(device, "double_scalar_w", v)),
+    ops.concat_map(lambda v: write_attribute(device, "double_scalar_w", v)),  # writes stay ordered
 ).subscribe(on_next=print, scheduler=scheduler)
 ```
 
@@ -237,7 +242,7 @@ Detector intensity → sliding average → drift detection → magnet correction
 
 ```python
 rx.interval(timedelta(milliseconds=50), scheduler=scheduler).pipe(
-    ops.flat_map(lambda _: read_attribute(detector, "intensity")),
+    ops.concat_map(lambda _: read_attribute(detector, "intensity")),  # no dropped samples
 
     # noise reduction — no circular buffer
     ops.buffer_with_count(count=5, skip=1),
@@ -246,8 +251,9 @@ rx.interval(timedelta(milliseconds=50), scheduler=scheduler).pipe(
     # only act on out-of-range readings
     ops.filter(lambda v: out_of_range(v)),
 
-    # issue correction command
-    ops.flat_map(lambda v: write_attribute(magnet, "setpoint", v)),
+    # issue correction command — concat_map, not flat_map: two rapid
+    # corrections must not race two writes out of order
+    ops.concat_map(lambda v: write_attribute(magnet, "setpoint", v)),
 ).subscribe(on_next=log, scheduler=scheduler)
 ```
 
@@ -275,7 +281,7 @@ Compare this directly to the Java version — same structure, same operator name
 | Script | What it shows |
 |--------|---------------|
 | `multi_device_snapshot.py` | Parallel reads, concurrent by default |
-| `correlate.py` ★ | **zip** — guaranteed atomic pair |
+| `correlate.py` ★ | **zip** — pair only when both complete, never half-delivered |
 
 ### Stream Processing
 | Script | What it shows |

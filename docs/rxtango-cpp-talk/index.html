@@ -289,7 +289,7 @@
         <div class="code-wrap" style="flex:1;">
           <div class="code-label">C++17 · observable&lt;&gt;::zip()</div>
           <pre><code class="language-cpp">rxcpp::observable&lt;&gt;::interval(500ms)
-  .flat_map([](long) {
+  .concat_map([](long) {
     // Both reads fire on background threads in parallel
     return rxcpp::observable&lt;&gt;::zip(
       [](double a, float b) { return process(a, b); },
@@ -365,7 +365,7 @@
       [](double p, double c) {
         return std::abs(c-p)/p &lt; 0.1; })
 
-  .flat_map([](double avg) {
+  .concat_map([](double avg) {   // two rapid deviations must not race two writes
     return rxtango::write_attribute&lt;double&gt;(
         device, "double_scalar_w", avg); });</code></pre>
         </div>
@@ -490,7 +490,7 @@
           <div class="af-left"><div class="af-dot"></div><div class="af-line"></div></div>
           <div class="af-card">
             <h4>RxCpp Operators</h4>
-            <p><code>flat_map</code> · <code>zip</code> · <code>merge</code> ·
+            <p><code>concat_map</code> · <code>zip</code> · <code>merge</code> ·
               <code>buffer</code> · <code>filter</code> · <code>scan</code> ·
               <code>sample_with_time</code> · <code>distinct_until_changed</code></p>
           </div>

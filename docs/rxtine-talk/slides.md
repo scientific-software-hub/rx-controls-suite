@@ -40,7 +40,7 @@ scattered thread synchronisation. Skip the long intro — hit the examples fast.
 
 ```java
 Flowable.interval(500, MILLISECONDS)
-  .flatMapSingle(tick -> Single.zip(
+  .concatMapSingle(tick -> Single.zip(
 
       // Both reads fire in parallel
       TineClient.read("/HERA/Magnets/QF1", "CURRENT")
@@ -84,7 +84,7 @@ TineClient.monitor("/HERA/Beam/Monitor", "INTENSITY")
       (prev, curr) -> Math.abs(curr - prev) / prev < 0.1
   )
 
-  .flatMapSingle(
+  .concatMapSingle(   // two rapid deviations must not race two writes
       v -> TineClient.write("/HERA/Beam/Corrector", "SETPOINT", v));
 ```
 

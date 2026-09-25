@@ -104,8 +104,11 @@ One new import. Zero new concepts.
 def ring_health(scheduler, interval_ms=1000) -> rx.Observable:
     return rx.interval(timedelta(milliseconds=interval_ms), scheduler=scheduler).pipe(
 
-        # Read BeamCurrent, InterlockCount, OrbitX simultaneously
-        ops.flat_map(lambda _: rx.zip(
+        # Read BeamCurrent, InterlockCount, OrbitX concurrently each tick.
+        # concat_map, not flat_map: this stream feeds an interlock abort
+        # trigger downstream — a coalescing poll could drop the one tick
+        # that caught the interlock.
+        ops.concat_map(lambda _: rx.zip(
             read_attribute(CONTROLLER, "BeamCurrent"),
             read_attribute(CONTROLLER, "InterlockCount"),
             read_attribute(SECTOR_04,  "OrbitX"),
@@ -148,7 +151,7 @@ wait_healthy = health.pipe(
 supervisor = health.pipe(
     ops.map(lambda h: h.current >= MIN_BEAM_CURRENT),
     ops.distinct_until_changed(),                 # only on state transitions
-    ops.flat_map(lambda ok:
+    ops.concat_map(lambda ok:                     # writes must not race out of order
         write_pv("TOMO:SHUTTER:OPEN", 1 if ok else 0, ctx)
     ),
 )
@@ -210,8 +213,13 @@ Speaker notes:
 In the traditional approach you'd either:
 (a) read the ring separately and correlate timestamps post-hoc, or
 (b) have a background thread that writes ring state to a shared buffer.
-With rx.zip, the ring state is co-acquired with the detector data in the same atomic operation.
-The quality flag is computed at the same instant as the acquisition. No correlation needed.
+With rx.zip, the ring state is co-acquired with the detector data in one expression, and the
+tuple is never half-written — but be precise if asked: zip fires all five reads concurrently
+and waits for all five to complete, which is not the same claim as "the same instant". Two
+control systems with no shared clock can't give you that for free; rxepics/rxtango's
+correlate_snapshot exists for exactly the cases where that gap matters and needs measuring
+(this five-way read stays a plain zip deliberately — it's a heterogeneous snapshot of five
+different quantities, not a claim that any two of them are simultaneous).
 
 ---
 
@@ -303,7 +311,7 @@ health = ring_health(scheduler)           # shared, 1 Hz
 supervisor = health.pipe(                  # PATTERN 4: shutter
     ops.map(lambda h: h.current >= 50.0),
     ops.distinct_until_changed(),
-    ops.flat_map(lambda ok: write_pv(SHUTTER, 1 if ok else 0, ctx)),
+    ops.concat_map(lambda ok: write_pv(SHUTTER, 1 if ok else 0, ctx)),
 ).subscribe(...)
 
 abort = health.pipe(                       # PATTERN 3: abort
@@ -375,7 +383,7 @@ Keep it fast: 4 faults, each takes 10 seconds.
 
 | Rx operator | What it solved |
 |---|---|
-| `rx.zip` | Parallel reads across EPICS + Tango — atomic frame |
+| `rx.zip` | Parallel reads across EPICS + Tango — never a half-written frame |
 | `share()` | One ring-health poll, three subscribers, no duplication |
 | `filter + take(1)` | Beam-loss gate — blocks acquisition until beam is OK |
 | `distinct_until_changed` | Shutter supervisor — fires only on state transitions |

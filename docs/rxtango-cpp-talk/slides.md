@@ -43,7 +43,7 @@ Skip preamble — show C++ code immediately.
 
 ```cpp
 rxcpp::observable<>::interval(std::chrono::milliseconds(500))
-  .flat_map([](long) {
+  .concat_map([](long) {
     // Both reads fire on background threads in parallel
     return rxcpp::observable<>::zip(
       [](double a, float b) { return process(a, b); },
@@ -86,7 +86,7 @@ rxtango::monitor_attribute<double>(device, "double_scalar", "periodic")
   .distinct_until_changed([](double prev, double curr) {
     return std::abs(curr - prev) / prev < 0.1;
   })
-  .flat_map([](double avg) {
+  .concat_map([](double avg) {   // two rapid deviations must not race two writes
     return rxtango::write_attribute<double>(device, "double_scalar_w", avg);
   })
   .subscribe([](double v) { std::cout << "wrote: " << v << "\n"; });
@@ -133,7 +133,7 @@ cppTango (Tango::DeviceProxy)
   read_attribute · write_attribute · execute_command  — single-shot
   monitor_attribute                                   — push, event-backed
         ↓  RxCpp operators
-  flat_map · zip · merge · buffer · filter · scan · sample_with_time
+  concat_map · zip · merge · buffer · filter · scan · sample_with_time
         ↓  Application logic — pure functions, no I/O, no shared state
         ↓  write_attribute / downstream
 ```

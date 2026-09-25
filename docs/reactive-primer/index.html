@@ -351,7 +351,7 @@
           <div class="fc-arrow">&#8595;</div>
           <div class="fc-box"><span class="fc-label">distinct_until_changed</span>only pass state changes</div>
           <div class="fc-arrow">&#8595;</div>
-          <div class="fc-box"><span class="fc-label">flat_map</span>write_pv(PV_SHUTTER, &hellip;)</div>
+          <div class="fc-box"><span class="fc-label">concat_map</span>write_pv(PV_SHUTTER, &hellip;)</div>
         </div>
         <div class="insight mt-auto">
           This is the shutter supervisor from the suite's combined storage-ring /
@@ -416,7 +416,7 @@ threading.Thread(
 supervisor_disp = health.pipe(
     ops.map(lambda h: h.current >= MIN_BEAM_CURRENT),
     ops.distinct_until_changed(),
-    ops.flat_map(lambda ok: write_pv(
+    ops.concat_map(lambda ok: write_pv(
         PV_SHUTTER, 1 if ok else 0, ctx
     )),
 ).subscribe(
@@ -430,7 +430,8 @@ supervisor_disp = health.pipe(
           &#10003; &nbsp;<code>.map</code> = the <code>ok = current &gt;= ...</code> line.
           <code>.distinct_until_changed()</code> <strong>is</strong> the
           <code>if ok != _shutter_open</code> check — no global required.
-          <code>.flat_map(write_pv(...))</code> is the write. One-to-one, no new concepts.
+          <code>.concat_map(write_pv(...))</code> is the write &mdash; serialized, not merged, so
+          two rapid transitions can't land two writes out of order. One-to-one, no new concepts.
         </div>
       </div>
     </div>
@@ -486,7 +487,7 @@ supervisor_disp = health.pipe(
           </div>
         </div>
 
-        <div class="op-row"><span class="op-arrow">&#8595;</span><span class="op-code two">.distinct_until_changed()</span><span class="op-code">.flat_map(write_pv(PV_SHUTTER, ...))</span></div>
+        <div class="op-row"><span class="op-arrow">&#8595;</span><span class="op-code two">.distinct_until_changed()</span><span class="op-code">.concat_map(write_pv(PV_SHUTTER, ...))</span></div>
 
         <div class="track">
           <div class="track-label">PV_SHUTTER writes <span class="track-sub">— only transitions reach the device</span></div>

@@ -394,7 +394,7 @@
       </table>
       <div class="matrix-ops">
         All three use the <strong style="color:#fff;">same operator vocabulary</strong><br>
-        <code>zip · merge · buffer_with_count · scan · sample · flat_map</code><br>
+        <code>zip · merge · buffer_with_count · scan · sample · concat_map</code><br>
         <span style="color:rgba(255,255,255,.4);font-size:.75rem;">
           The only difference is the control-system call underneath
         </span>
@@ -445,7 +445,7 @@
           <div class="code-label python">Python · rx.zip()</div>
           <pre><code class="language-python">rx.interval(timedelta(ms=500), scheduler=scheduler).pipe(
 
-    ops.flat_map(lambda _: rx.zip(
+    ops.concat_map(lambda _: rx.zip(
 
         # Both reads fire in parallel
         read_attribute(device1, "current"),
@@ -510,7 +510,7 @@
         <div class="code-wrap" style="flex:1;">
           <div class="code-label python">Python · buffer_with_count + distinct_until_changed</div>
           <pre><code class="language-python">rx.interval(timedelta(ms=50), scheduler=scheduler).pipe(
-    ops.flat_map(
+    ops.concat_map(   # no dropped samples
         lambda _: read_attribute(device, "double_scalar")),
 
     # Sliding window — no deque, no index arithmetic
@@ -522,7 +522,7 @@
         comparer=lambda p, c: abs(c - p) / (p or 1e-9) < 0.1
     ),
 
-    ops.flat_map(
+    ops.concat_map(   # writes stay ordered
         lambda v: write_attribute(device, "double_scalar_w", v)),
 ).subscribe(on_next=print, scheduler=scheduler)</code></pre>
         </div>
@@ -731,7 +731,7 @@
         <div class="code-wrap">
           <div class="code-label python">Python · feedback pipeline</div>
           <pre><code class="language-python">rx.interval(timedelta(ms=50), scheduler=sched).pipe(
-    ops.flat_map(
+    ops.concat_map(   # no dropped samples
         lambda _: read_attribute(detector, "intensity")),
 
     # noise reduction — no circular buffer
@@ -741,8 +741,9 @@
     # only act on out-of-range readings
     ops.filter(lambda v: out_of_range(v)),
 
-    # issue correction
-    ops.flat_map(
+    # issue correction — concat_map: two rapid corrections must not
+    # race two writes out of order
+    ops.concat_map(
         lambda v: write_attribute(magnet, "setpoint", v)),
 ).subscribe(on_next=log, scheduler=sched)</code></pre>
         </div>
@@ -799,7 +800,7 @@
             </div>
             <div class="demo-row star">
               <span class="alias">correlate.py ★</span>
-              <span class="desc"><strong>zip</strong> — guaranteed atomic pair</span>
+              <span class="desc"><strong>zip</strong> — pair only when both complete, never half-delivered</span>
             </div>
           </div>
         </div>

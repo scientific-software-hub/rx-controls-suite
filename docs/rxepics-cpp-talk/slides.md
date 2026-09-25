@@ -40,7 +40,7 @@ No commands in EPICS — everything is a PV.
 
 ```cpp
 rxcpp::observable<>::interval(std::chrono::milliseconds(500))
-  .flat_map([&ctx](long) {
+  .concat_map([&ctx](long) {
     return rxcpp::observable<>::zip(
       [](double c, double x) { return process(c, x); },
       rxepics::read_pv<double>("BEAM:CURRENT", ctx),
@@ -80,7 +80,7 @@ rxepics::monitor_pv<double>("TEST:CALC")
   .distinct_until_changed([](double prev, double curr) {
     return std::abs(curr - prev) / prev < 0.1;
   })
-  .flat_map([&ctx](double avg) {
+  .concat_map([&ctx](double avg) {   // two rapid deviations must not race two writes
     return rxepics::write_pv<double>("TEST:DOUBLE", avg, ctx);
   })
   .subscribe([](double v) { std::cout << "wrote: " << v << "\n"; });
@@ -127,7 +127,7 @@ EPICS IOC (CA/PVA via PVXS pvxs::client::Context)
   read_pv · write_pv        — single-shot
   monitor_pv                 — push, PVXS monitor-backed
         ↓  RxCpp operators
-  flat_map · zip · merge · buffer · filter · scan · sample_with_time
+  concat_map · zip · merge · buffer · filter · scan · sample_with_time
         ↓  Application logic — pure functions
         ↓  write_pv / downstream
 ```

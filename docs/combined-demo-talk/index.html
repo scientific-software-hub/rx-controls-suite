@@ -415,15 +415,16 @@
     <div class="section-strip">
       <span class="section-num">The Showstopper</span>
       <span class="section-title">Cross-System rx.zip — One Operator, Two Protocols</span>
-      <span class="section-sub">five reads · in parallel · atomic frame</span>
+      <span class="section-sub">five reads · in parallel · never half-written</span>
     </div>
     <div class="two-col">
       <div class="panel">
         <span class="label label-navy">The scenario</span>
         <div class="scenario">
           "After each exposure, read detector counts and beam position from EPICS
-          <em>and</em> ring current and orbit deviation from Tango — simultaneously,
-          atomically. Tag the frame with a quality flag computed from the orbit."
+          <em>and</em> ring current and orbit deviation from Tango — concurrently,
+          as one frame, never half-written. Tag the frame with a quality flag
+          computed from the orbit."
         </div>
         <span class="label label-orange">Traditional approach</span>
         <ul class="bullet-list">
@@ -498,8 +499,11 @@ def ring_health(scheduler, interval_ms=1000):
         timedelta(milliseconds=interval_ms),
         scheduler=scheduler,
     ).pipe(
-        # Read three ring attributes simultaneously
-        ops.flat_map(lambda _: rx.zip(
+        # Read three ring attributes concurrently each tick. concat_map,
+        # not flat_map: this stream feeds an interlock abort trigger
+        # downstream — a coalescing poll could drop the one tick that
+        # caught the interlock.
+        ops.concat_map(lambda _: rx.zip(
             read_attribute(CONTROLLER, "BeamCurrent"),
             read_attribute(CONTROLLER, "InterlockCount"),
             read_attribute(SECTOR_04,  "OrbitX"),
@@ -527,7 +531,7 @@ def ring_health(scheduler, interval_ms=1000):
           <div class="code-label combo">Python · three consumers</div>
           <pre><code class="language-python"># 1. Shutter supervisor
 health.pipe(map(beam_ok), distinct_until_changed,
-            flat_map(write_pv(SHUTTER))).subscribe(...)
+            concat_map(write_pv(SHUTTER))).subscribe(...)
 
 # 2. Abort trigger (in take_until)
 abort = health.pipe(filter(interlocks &gt; 0), take(1))
@@ -582,7 +586,7 @@ return rx.concat(wait_healthy, acquire(...))</code></pre>
     ops.map(lambda h:
         h.current &gt;= MIN_BEAM_CURRENT),
     ops.distinct_until_changed(), # only on transitions
-    ops.flat_map(lambda ok: write_pv(
+    ops.concat_map(lambda ok: write_pv(   # writes must not race out of order
         "TOMO:SHUTTER:OPEN", 1 if ok else 0, ctx)),
 ).subscribe(on_next=print, scheduler=scheduler)</code></pre>
         </div>
@@ -630,14 +634,14 @@ python inject_fault.py nominal
     <div class="section-strip">
       <span class="section-num">Pattern 2</span>
       <span class="section-title">Orbit-Drift Quality Flagging</span>
-      <span class="section-sub">cross-system zip · quality computed at acquisition time</span>
+      <span class="section-sub">cross-system zip · one expression, no background thread</span>
     </div>
     <div class="two-col">
       <div class="panel">
         <div class="scenario">
-          "Tag every tomography frame with the storage-ring orbit deviation at the
-          exact moment the detector exposure completed — no timestamp correlation,
-          no post-processing join."
+          "Tag every tomography frame with the storage-ring orbit deviation read
+          right after the detector exposure completed — one expression, no
+          background thread, no post-processing join."
         </div>
         <span class="label label-combo">How it works</span>
         <div class="code-wrap" style="flex:1;">
@@ -682,9 +686,12 @@ ops.map(lambda r: (
 # → live display shows ~ instead of ✓</code></pre>
         </div>
         <div class="guarantee mt-auto">
-          ✓ &nbsp;Quality is computed co-temporaneously with acquisition.<br>
-          ✓ &nbsp;No background thread, no ring-state buffer, no join key.<br>
-          ✓ &nbsp;One rx.zip per projection — atomically correct.
+          ✓ &nbsp;Quality is computed from the same zip that reads the frame — no
+          separate poll, no ring-state buffer, no join key.<br>
+          ✓ &nbsp;No background thread.<br>
+          ✓ &nbsp;One rx.zip per projection — never a half-written frame (not a
+          claim that all five reads landed at the same instant; see
+          correlate_snapshot where that gap is actually measured).
         </div>
       </div>
     </div>
@@ -862,7 +869,7 @@ print(f"Frames displayed: {display_shown}")
 supervisor = health.pipe(
     ops.map(lambda h: h.current &gt;= 50),
     ops.distinct_until_changed(),
-    ops.flat_map(lambda ok:
+    ops.concat_map(lambda ok:   # writes must not race out of order
         write_pv(SHUTTER, 1 if ok else 0, ctx)),
 ).subscribe(...)
 

@@ -89,7 +89,7 @@ and timing.
 
 ```java
 Flowable.interval(500, MILLISECONDS)
-  .flatMapSingle(tick -> Single.zip(
+  .concatMapSingle(tick -> Single.zip(
 
       // Both reads fire in parallel
       read(device1, "current")
@@ -138,7 +138,7 @@ each time.
 
 ```java
 Flowable.interval(50, MILLISECONDS)     // 20 Hz
-  .flatMapSingle(read(device, "double_scalar"))
+  .concatMapSingle(read(device, "double_scalar"))   // no dropped samples
 
   // Sliding window — no deque, no index arithmetic
   .buffer(5, 1)
@@ -149,7 +149,7 @@ Flowable.interval(50, MILLISECONDS)     // 20 Hz
       (prev, curr) -> Math.abs(curr - prev) / prev < 0.1
   )
 
-  .flatMapSingle(write(device, "double_scalar_w"));
+  .concatMapSingle(write(device, "double_scalar_w"));  // writes stay ordered
 ```
 
 ✓ No daemon. No formula DSL. No deque.
@@ -276,8 +276,9 @@ detectorStream
   // only act on out-of-range readings
   .filter(v -> outOfRange(v))
 
-  // issue correction command
-  .flatMapSingle(write(magnet, "setpoint"));
+  // issue correction command — concatMapSingle, not flatMapSingle: two
+  // rapid corrections must not race two writes out of order
+  .concatMapSingle(write(magnet, "setpoint"));
 ```
 
 Same pattern, from single beamline feedback to facility-wide telemetry —
@@ -305,7 +306,7 @@ the audience connects the abstract model to their actual work.
 | Alias | What it shows |
 |-------|---------------|
 | `snapshot` | Parallel reads, concurrent by default |
-| `correlate` ★ | **zip** — guaranteed atomic pair |
+| `correlate` ★ | **zip** — pair only when both complete, never half-delivered |
 
 ### Stream Processing
 | Alias | What it shows |
